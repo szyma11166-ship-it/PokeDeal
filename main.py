@@ -13,21 +13,6 @@ def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-# ---------- FILTR OKAZJI ----------
-def is_deal(name, price):
-    name = name.lower()
-
-    if "etb" in name and price < 300:
-        return True
-    if "booster box" in name and price < 200:
-        return True
-    if "booster" in name and price < 25:
-        return True
-    if "tin" in name and price < 100:
-        return True
-
-    return False
-
 # ---------- FILTR POKEMON ----------
 def is_pokemon_product(text):
     text = text.lower()
@@ -64,12 +49,10 @@ def check_allegro():
             price = item.select_one("span").text.strip()
             link = item.find("a")["href"]
 
-            price_num = float(price.replace("zł", "").replace(",", ".").split()[0])
-
-            if is_pokemon_product(name) and is_deal(name, price_num):
+            if is_pokemon_product(name):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🔥 ALLEGRO OKAZJA 🔥\n{name}\n{price}\n{link}")
+                    send(f"🔥 ALLEGRO\n{name}\n{price}\n{link}")
 
         except:
             continue
@@ -90,12 +73,10 @@ def check_rebel():
             price = p.select_one(".price").text.strip()
             link = "https://www.rebel.pl" + p.select_one("a")["href"]
 
-            price_num = float(price.replace("zł", "").replace(",", "."))
-
-            if is_pokemon_product(name) and is_deal(name, price_num):
+            if is_pokemon_product(name):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🟡 REBEL OKAZJA\n{name}\n{price}\n{link}")
+                    send(f"🟡 REBEL\n{name}\n{price}\n{link}")
 
         except:
             continue
@@ -154,7 +135,7 @@ def check_shop(name, url, code):
             if not is_pokemon_product(text):
                 continue
 
-            # 🔍 szukamy ceny
+            # 🔍 cena (opcjonalna)
             parent = p.parent
             price = None
 
@@ -165,14 +146,6 @@ def check_shop(name, url, code):
                 if match:
                     price = float(match.group(1).replace(",", "."))
 
-            # ❌ brak ceny
-            if price is None:
-                continue
-
-            # 🎯 filtr okazji
-            if not is_deal(text, price):
-                continue
-
             if link in sent:
                 continue
 
@@ -181,7 +154,7 @@ def check_shop(name, url, code):
             msg = f"""🟢 {name}
 {text[:100]}
 
-💰 {price} zł
+💰 {price if price else "brak ceny"}
 🎟 Kod: {code}
 {link}"""
 
