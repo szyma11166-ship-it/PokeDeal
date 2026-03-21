@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import os
+import re
 
 TOKEN = os.environ.get("TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
@@ -65,10 +66,10 @@ def check_allegro():
 
             price_num = float(price.replace("zł", "").replace(",", ".").split()[0])
 
-            if is_pokemon_product(name) and is_deal(name, price_num):
+            if is_pokemon_product(name):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🔥 ALLEGRO OKAZJA 🔥\n{name}\n{price}\n{link}")
+                    send(f"🔥 ALLEGRO\n{name}\n{price}\n{link}")
 
         except:
             continue
@@ -89,12 +90,10 @@ def check_rebel():
             price = p.select_one(".price").text.strip()
             link = "https://www.rebel.pl" + p.select_one("a")["href"]
 
-            price_num = float(price.replace("zł", "").replace(",", "."))
-
-            if is_pokemon_product(name) and is_deal(name, price_num):
+            if is_pokemon_product(name):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🟡 REBEL OKAZJA\n{name}\n{price}\n{link}")
+                    send(f"🟡 REBEL\n{name}\n{price}\n{link}")
 
         except:
             continue
@@ -106,7 +105,10 @@ shops = [
     ("Strefa TCG", "https://strefa-tcg.pl/", "taDZIK"),
     ("Kanto Drop", "https://kantodrop.pl/", "BRAK"),
     ("Świat Kart", "https://swiatkart.com.pl/", "BRAK"),
-    ("Skład Gier", "https://skladgier.pl/", "def check_shop(name, url, code):
+    ("Skład Gier", "https://skladgier.pl/", "BRAK"),
+]
+
+def check_shop(name, url, code):
     print(f"{name}...")
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -114,20 +116,20 @@ shops = [
         r = requests.get(url, headers=headers)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        products = soup.find_all("a")
+        links = soup.find_all("a")
 
-        for p in products[:150]:
+        for p in links[:150]:
             text = p.text.strip().lower()
 
             if not text:
                 continue
 
-            # ❌ blokuj admin / koszyk / logowanie
             link = p.get("href")
             if not link:
                 continue
 
-            if "wp-admin" in link or "konto" in link or "login" in link:
+            # ❌ blokujemy śmieci
+            if "wp-admin" in link or "login" in link or "konto" in link:
                 continue
 
             if not link.startswith("http"):
@@ -137,26 +139,16 @@ shops = [
             if not is_pokemon_product(text):
                 continue
 
-            # 🔍 próbujemy znaleźć cenę obok
+            # 🔍 próbujemy znaleźć cenę
             parent = p.parent
             price = None
 
             if parent:
                 price_text = parent.get_text()
-
-                import re
                 match = re.search(r"(\d+[,.]?\d*)\s*zł", price_text)
 
                 if match:
                     price = float(match.group(1).replace(",", "."))
-
-            # ❌ brak ceny → pomijamy
-            if price is None:
-                continue
-
-            # 🎯 filtr okazji
-            if not is_deal(text, price):
-                continue
 
             if link in sent:
                 continue
@@ -166,7 +158,7 @@ shops = [
             msg = f"""🟢 {name}
 {text[:100]}
 
-💰 {price} zł
+💰 {price if price else "brak ceny"}
 🎟 Kod: {code}
 {link}"""
 
@@ -174,8 +166,6 @@ shops = [
 
     except Exception as e:
         print(f"Błąd {name}:", e)
-
-
 
 # ---------- START ----------
 print("START DEAL BOT")
@@ -191,4 +181,4 @@ while True:
     except Exception as e:
         print("Błąd:", e)
 
-    time.sleep(20)
+    time.sleep(30)
