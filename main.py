@@ -66,10 +66,10 @@ def check_allegro():
 
             price_num = float(price.replace("zł", "").replace(",", ".").split()[0])
 
-            if is_pokemon_product(name):
+            if is_pokemon_product(name) and is_deal(name, price_num):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🔥 ALLEGRO\n{name}\n{price}\n{link}")
+                    send(f"🔥 ALLEGRO OKAZJA 🔥\n{name}\n{price}\n{link}")
 
         except:
             continue
@@ -90,10 +90,12 @@ def check_rebel():
             price = p.select_one(".price").text.strip()
             link = "https://www.rebel.pl" + p.select_one("a")["href"]
 
-            if is_pokemon_product(name):
+            price_num = float(price.replace("zł", "").replace(",", "."))
+
+            if is_pokemon_product(name) and is_deal(name, price_num):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🟡 REBEL\n{name}\n{price}\n{link}")
+                    send(f"🟡 REBEL OKAZJA\n{name}\n{price}\n{link}")
 
         except:
             continue
@@ -128,8 +130,25 @@ def check_shop(name, url, code):
             if not link:
                 continue
 
-            # ❌ blokujemy śmieci
-            if "wp-admin" in link or "login" in link or "konto" in link:
+            # ❌ blokuj śmieci
+            if any(x in link for x in ["wp-admin", "login", "konto", "cart"]):
+                continue
+
+            # ❌ blokuj kategorie
+            bad_paths = [
+                "/collections",
+                "/category",
+                "/kategoria",
+                "/tag",
+                "/search",
+                "/blog"
+            ]
+
+            if any(b in link for b in bad_paths):
+                continue
+
+            # ❌ musi być produkt
+            if not any(x in link for x in ["product", "/p/", ".html"]):
                 continue
 
             if not link.startswith("http"):
@@ -139,7 +158,7 @@ def check_shop(name, url, code):
             if not is_pokemon_product(text):
                 continue
 
-            # 🔍 próbujemy znaleźć cenę
+            # 🔍 szukamy ceny
             parent = p.parent
             price = None
 
@@ -150,6 +169,14 @@ def check_shop(name, url, code):
                 if match:
                     price = float(match.group(1).replace(",", "."))
 
+            # ❌ brak ceny
+            if price is None:
+                continue
+
+            # 🎯 filtr okazji
+            if not is_deal(text, price):
+                continue
+
             if link in sent:
                 continue
 
@@ -158,7 +185,7 @@ def check_shop(name, url, code):
             msg = f"""🟢 {name}
 {text[:100]}
 
-💰 {price if price else "brak ceny"}
+💰 {price} zł
 🎟 Kod: {code}
 {link}"""
 
