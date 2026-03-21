@@ -49,7 +49,7 @@ def is_new(link):
     return True
 
 # =========================
-# BLACKLIST CHECK
+# BLACKLIST
 # =========================
 def is_blacklisted(name):
     name = name.lower()
@@ -119,7 +119,7 @@ def get_market_price(name):
     return None
 
 # =========================
-# OCENA OKAZJI (3 POZIOMY 🔥)
+# OCENA (3 POZIOMY)
 # =========================
 def rate_deal(price, market):
     if not market:
@@ -137,7 +137,7 @@ def rate_deal(price, market):
     return None
 
 # =========================
-# OGÓLNE OKAZJE
+# OKAZJE (FIX)
 # =========================
 def is_general_deal(name, price):
     if not price:
@@ -145,6 +145,7 @@ def is_general_deal(name, price):
 
     market = get_market_price(name)
 
+    # normalna logika
     if market:
         rating = rate_deal(price, market)
 
@@ -152,9 +153,9 @@ def is_general_deal(name, price):
             discount = int((1 - price/market) * 100)
             return f"{rating} (-{discount}%)", market
 
-    # fallback (tanie rzeczy bez porównania)
-    if not market and price < 100:
-        return "💰 TANIE", price
+    # 🔥 KLUCZOWY FIX — NIE MILCZY
+    if not market and price < 150:
+        return "💰 TANIE (brak porównania)", price
 
     return None, None
 
@@ -258,8 +259,8 @@ def check_olx():
 # =========================
 # START
 # =========================
-print("🚀 BOT FINAL START")
-send("🚀 BOT FINAL DZIAŁA")
+print("🚀 BOT FINAL FIX START")
+send("🚀 BOT FINAL FIX DZIAŁA")
 
 while True:
     check_allegro()
