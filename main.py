@@ -10,20 +10,12 @@ CHAT_ID = "-1003743099672"
 seen_links = set()
 
 # =========================
-# BLACKLIST (EDYTUJ)
+# BLACKLIST
 # =========================
 blacklist = [
-    "etui",
-    "case",
-    "pokrowiec",
-    "naklejka",
-    "folia",
-    "szkło",
-    "uszkodz",
-    "części",
-    "na części",
-    "pudełko",
-    "box empty"
+    "etui", "case", "pokrowiec", "naklejka", "folia",
+    "szkło", "uszkodz", "części", "na części",
+    "pudełko", "box empty"
 ]
 
 # =========================
@@ -87,6 +79,12 @@ def is_pokemon_deal(name, price):
     if "ultra premium" in name and price and price < 600:
         return "🟣 ULTRA PREMIUM"
 
+    if "pokemon day" in name and price and price < 70:
+        return "🟣 POKEMON DAY"
+
+    if "first partner" in name and price and price < 120:
+        return "🟣 FIRST PARTNER"
+
     return None
 
 # =========================
@@ -121,22 +119,22 @@ def get_market_price(name):
     return None
 
 # =========================
-# OCENA OKAZJI ⭐
+# OCENA OKAZJI (3 POZIOMY 🔥)
 # =========================
 def rate_deal(price, market):
     if not market:
-        return "⚪ brak danych"
+        return None
 
     ratio = price / market
 
-    if ratio < 0.4:
+    if ratio < 0.5:
         return "🔥🔥🔥 MEGA FLIP"
-    elif ratio < 0.5:
+    elif ratio < 0.65:
         return "🔥🔥 DOBRA OKAZJA"
-    elif ratio < 0.6:
+    elif ratio < 0.75:
         return "🔥 OKAZJA"
-    else:
-        return None
+
+    return None
 
 # =========================
 # OGÓLNE OKAZJE
@@ -153,6 +151,10 @@ def is_general_deal(name, price):
         if rating:
             discount = int((1 - price/market) * 100)
             return f"{rating} (-{discount}%)", market
+
+    # fallback (tanie rzeczy bez porównania)
+    if not market and price < 100:
+        return "💰 TANIE", price
 
     return None, None
 
@@ -256,8 +258,8 @@ def check_olx():
 # =========================
 # START
 # =========================
-print("🚀 BOT ULTRA START")
-send("🚀 BOT ULTRA DZIAŁA")
+print("🚀 BOT FINAL START")
+send("🚀 BOT FINAL DZIAŁA")
 
 while True:
     check_allegro()
