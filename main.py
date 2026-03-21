@@ -5,7 +5,7 @@ import os
 import re
 
 TOKEN = os.environ.get("TOKEN")
-CHAT_ID = "-100XXXXXXXXX"
+CHAT_ID = "-1003743099672"
 
 seen_links = set()
 
