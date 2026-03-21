@@ -217,6 +217,8 @@ def check_shop(name, url, code):
 # ---------- START ----------
 print("🚀 START DEAL BOT")
 
+send("🚀 TEST KANAŁ OKAZJI")
+
 while True:
     try:
         check_allegro()
