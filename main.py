@@ -147,10 +147,6 @@ def check_shop(name, url, code):
             if any(b in link for b in bad_paths):
                 continue
 
-            # ❌ musi być produkt
-            if not any(x in link for x in ["product", "/p/", ".html"]):
-                continue
-
             if not link.startswith("http"):
                 link = url + link
 
