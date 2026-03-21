@@ -1,1 +1,1 @@
-print("BOT START")
+print("NOWA WERSJA")
