@@ -15,13 +15,25 @@ seen_links = set()
 blacklist = [
     "etui", "case", "pokrowiec", "naklejka", "folia",
     "szkło", "uszkodz", "części", "na części",
-    "pudełko", "box empty"
+    "pudełko", "box empty",
+    "obserwuj", "zamienię", "za darmo",
+    "gratis", "oddam", "rezerwacja"
 ]
 
 # =========================
-# SEND
+# SEND (ładny format)
 # =========================
-def send(msg):
+def send(title, price, link, tag, market=None):
+    msg = f"{tag}\n\n📦 {title}\n"
+
+    if price:
+        msg += f"💸 {price} zł\n"
+
+    if market:
+        msg += f"📊 ~{int(market)} zł\n"
+
+    msg += f"\n🔗 {link}"
+
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={
         "chat_id": CHAT_ID,
@@ -34,8 +46,14 @@ def send(msg):
 def extract_price(text):
     try:
         text = text.replace(",", ".")
-        price = float(re.findall(r"\d+\.\d+|\d+", text)[0])
-        return price
+        prices = re.findall(r"\d+\.\d+|\d+", text)
+
+        for p in prices:
+            val = float(p)
+            if val > 20:  # 🔥 filtr śmieci
+                return val
+
+        return None
     except:
         return None
 
@@ -64,26 +82,26 @@ def is_pokemon(name):
 def is_pokemon_deal(name, price):
     name = name.lower()
 
-    if "elite trainer box" in name and price and price < 300:
-        return "🟣 ETB"
+    if "elite trainer box" in name and price < 300:
+        return "🟣 POKEMON • ETB"
 
-    if ("booster box" in name or "display" in name) and price and price < 200:
-        return "🟣 BOOSTER BOX"
+    if ("booster box" in name or "display" in name) and price < 200:
+        return "🟣 POKEMON • BOOSTER BOX"
 
-    if "booster" in name and "box" not in name and price and price < 25:
-        return "🟣 BOOSTER"
+    if "booster" in name and "box" not in name and price < 25:
+        return "🟣 POKEMON • BOOSTER"
 
-    if "tin" in name and price and price < 100:
-        return "🟣 TIN"
+    if "tin" in name and price < 100:
+        return "🟣 POKEMON • TIN"
 
-    if "ultra premium" in name and price and price < 600:
-        return "🟣 ULTRA PREMIUM"
+    if "ultra premium" in name and price < 600:
+        return "🟣 POKEMON • ULTRA PREMIUM"
 
-    if "pokemon day" in name and price and price < 70:
-        return "🟣 POKEMON DAY"
+    if "pokemon day" in name and price < 70:
+        return "🟣 POKEMON • DAY"
 
-    if "first partner" in name and price and price < 120:
-        return "🟣 FIRST PARTNER"
+    if "first partner" in name and price < 120:
+        return "🟣 POKEMON • FIRST PARTNER"
 
     return None
 
@@ -105,9 +123,10 @@ def get_market_price(name):
         for item in soup.find_all("article")[:6]:
             text = item.get_text().replace(",", ".")
             p = re.findall(r"\d+\.\d+|\d+", text)
+
             if p:
                 val = float(p[0])
-                if val > 10:
+                if val > 20:
                     prices.append(val)
 
         if len(prices) >= 3:
@@ -119,7 +138,7 @@ def get_market_price(name):
     return None
 
 # =========================
-# OCENA (3 POZIOMY)
+# OCENA
 # =========================
 def rate_deal(price, market):
     if not market:
@@ -137,25 +156,18 @@ def rate_deal(price, market):
     return None
 
 # =========================
-# OKAZJE (FIX)
+# OGÓLNE OKAZJE
 # =========================
 def is_general_deal(name, price):
-    if not price:
-        return None, None
-
     market = get_market_price(name)
 
-    # normalna logika
     if market:
         rating = rate_deal(price, market)
-
         if rating:
-            discount = int((1 - price/market) * 100)
-            return f"{rating} (-{discount}%)", market
+            return rating, market
 
-    # 🔥 KLUCZOWY FIX — NIE MILCZY
-    if not market and price < 150:
-        return "💰 TANIE (brak porównania)", price
+    if price < 150:
+        return "💰 TANIE", price
 
     return None, None
 
@@ -169,9 +181,7 @@ def check_allegro():
     r = requests.get(url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.find_all("article")
-
-    for item in items:
+    for item in soup.find_all("article"):
         try:
             text = item.get_text().lower()
             link = "https://allegro.pl" + item.find("a")["href"]
@@ -183,35 +193,20 @@ def check_allegro():
                 continue
 
             price = extract_price(text)
+            if not price:
+                continue
 
             # POKEMON
             if is_pokemon(text):
-                deal = is_pokemon_deal(text, price)
-
-                if deal:
-                    send(f"""
-🟣 POKEMON OKAZJA
-
-📦 {text[:80]}
-💸 {price} zł
-🔗 {link}
-""")
+                tag = is_pokemon_deal(text, price)
+                if tag:
+                    send(text[:80], price, link, tag)
 
             # INNE
             else:
-                deal, market = is_general_deal(text, price)
-
-                if deal:
-                    send(f"""
-{deal}
-
-📦 {text[:80]}
-
-💸 {price} zł
-📊 ~{int(market)} zł
-
-🔗 {link}
-""")
+                tag, market = is_general_deal(text, price)
+                if tag:
+                    send(text[:80], price, link, tag, market)
 
         except:
             continue
@@ -226,9 +221,7 @@ def check_olx():
     r = requests.get(url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.find_all("div", {"data-cy": "l-card"})
-
-    for item in items:
+    for item in soup.find_all("div", {"data-cy": "l-card"}):
         try:
             text = item.get_text().lower()
             link = item.find("a")["href"]
@@ -240,18 +233,18 @@ def check_olx():
                 continue
 
             price = extract_price(text)
+            if not price:
+                continue
 
             if is_pokemon(text):
-                deal = is_pokemon_deal(text, price)
-
-                if deal:
-                    send(f"🟣 OLX POKEMON\n{text[:80]}\n💸 {price}\n{link}")
+                tag = is_pokemon_deal(text, price)
+                if tag:
+                    send(text[:80], price, link, tag)
 
             else:
-                deal, market = is_general_deal(text, price)
-
-                if deal:
-                    send(f"{deal}\n{text[:80]}\n💸 {price}\n📊 ~{int(market)} zł\n{link}")
+                tag, market = is_general_deal(text, price)
+                if tag:
+                    send(text[:80], price, link, tag, market)
 
         except:
             continue
@@ -259,8 +252,8 @@ def check_olx():
 # =========================
 # START
 # =========================
-print("🚀 BOT FINAL FIX START")
-send("🚀 BOT FINAL FIX DZIAŁA")
+print("🚀 BOT START")
+send("BOT DZIAŁA", "", "", "🚀 START")
 
 while True:
     check_allegro()
