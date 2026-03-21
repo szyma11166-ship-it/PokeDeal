@@ -14,16 +14,27 @@ def send(msg):
     requests.post(url, data={
         "chat_id": CHAT_ID,
         "text": msg,
-        "parse_mode": "HTML"
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     })
 
 # ---------- FILTR OKAZJI ----------
 def is_deal(name, price):
     name = name.lower()
 
-    # ❌ blokuj drogie zestawy
-    if any(x in name for x in ["display", "collector", "premium", "ultra-premium"]):
+    # ❌ blokuj śmieci
+    if any(x in name for x in ["display", "collector box"]):
         return False
+
+    # 🔥 SPECJALNE EDYCJE
+    if "first partner illustration collection" in name and price <= 120:
+        return True
+
+    if "pokemon day collection" in name and price <= 70:
+        return True
+
+    if "ultra premium collection" in name and price <= 600:
+        return True
 
     # 🎯 ETB
     if ("etb" in name or "elite trainer box" in name) and price <= 300:
@@ -49,7 +60,7 @@ def is_pokemon_product(text):
 
     must_have = ["pokemon", "pokémon"]
     banned = ["lorcana", "mtg", "magic", "yugioh", "one piece", "digimon"]
-    product_types = ["booster", "etb", "box", "tin", "bundle"]
+    product_types = ["booster", "etb", "box", "tin", "bundle", "collection"]
 
     if any(b in text for b in banned):
         return False
@@ -65,7 +76,9 @@ def is_pokemon_product(text):
 # ---------- FORMAT WIADOMOŚCI ----------
 def format_msg(shop, name, price, link, code):
     return f"""
-<b>🔥 OKAZJA - {shop} 🔥</b>
+<b>🔥 OKAZJA 🔥</b>
+
+🏪 <b>{shop}</b>
 
 📦 <b>{name[:100]}</b>
 
@@ -163,16 +176,7 @@ def check_shop(name, url, code):
                 continue
 
             # ❌ blokuj kategorie
-            bad_paths = [
-                "/collections",
-                "/category",
-                "/kategoria",
-                "/tag",
-                "/search",
-                "/blog"
-            ]
-
-            if any(b in link for b in bad_paths):
+            if any(x in link for x in ["/collections", "/category", "/kategoria", "/tag", "/search"]):
                 continue
 
             if not link.startswith("http"):
