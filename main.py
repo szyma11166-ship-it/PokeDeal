@@ -5,9 +5,26 @@ import os
 import re
 
 TOKEN = os.environ.get("TOKEN")
-CHAT_ID = "-100XXXXXXXXX"  # <- WSTAW SWÓJ
+CHAT_ID = "-100XXXXXXXXX"
 
 seen_links = set()
+
+# =========================
+# BLACKLIST (EDYTUJ)
+# =========================
+blacklist = [
+    "etui",
+    "case",
+    "pokrowiec",
+    "naklejka",
+    "folia",
+    "szkło",
+    "uszkodz",
+    "części",
+    "na części",
+    "pudełko",
+    "box empty"
+]
 
 # =========================
 # SEND
@@ -40,6 +57,13 @@ def is_new(link):
     return True
 
 # =========================
+# BLACKLIST CHECK
+# =========================
+def is_blacklisted(name):
+    name = name.lower()
+    return any(word in name for word in blacklist)
+
+# =========================
 # POKEMON
 # =========================
 def is_pokemon(name):
@@ -63,16 +87,10 @@ def is_pokemon_deal(name, price):
     if "ultra premium" in name and price and price < 600:
         return "🟣 ULTRA PREMIUM"
 
-    if "pokemon day" in name and price and price < 70:
-        return "🟣 POKEMON DAY"
-
-    if "first partner" in name and price and price < 120:
-        return "🟣 FIRST PARTNER"
-
     return None
 
 # =========================
-# CENA RYNKOWA (SMART 🔥)
+# MARKET PRICE
 # =========================
 def get_market_price(name):
     try:
@@ -91,7 +109,7 @@ def get_market_price(name):
             p = re.findall(r"\d+\.\d+|\d+", text)
             if p:
                 val = float(p[0])
-                if val > 10:  # filtr śmieci
+                if val > 10:
                     prices.append(val)
 
         if len(prices) >= 3:
@@ -103,22 +121,40 @@ def get_market_price(name):
     return None
 
 # =========================
-# OGÓLNE OKAZJE (AI-LIKE)
+# OCENA OKAZJI ⭐
+# =========================
+def rate_deal(price, market):
+    if not market:
+        return "⚪ brak danych"
+
+    ratio = price / market
+
+    if ratio < 0.4:
+        return "🔥🔥🔥 MEGA FLIP"
+    elif ratio < 0.5:
+        return "🔥🔥 DOBRA OKAZJA"
+    elif ratio < 0.6:
+        return "🔥 OKAZJA"
+    else:
+        return None
+
+# =========================
+# OGÓLNE OKAZJE
 # =========================
 def is_general_deal(name, price):
     if not price:
-        return None
+        return None, None
 
     market = get_market_price(name)
 
     if market:
-        percent = price / market
+        rating = rate_deal(price, market)
 
-        if percent < 0.6:
-            discount = int((1 - percent) * 100)
-            return f"💰 OKAZJA (-{discount}%)"
+        if rating:
+            discount = int((1 - price/market) * 100)
+            return f"{rating} (-{discount}%)", market
 
-    return None
+    return None, None
 
 # =========================
 # ALLEGRO
@@ -140,6 +176,9 @@ def check_allegro():
             if not is_new(link):
                 continue
 
+            if is_blacklisted(text):
+                continue
+
             price = extract_price(text)
 
             # POKEMON
@@ -151,15 +190,13 @@ def check_allegro():
 🟣 POKEMON OKAZJA
 
 📦 {text[:80]}
-
 💸 {price} zł
-
 🔗 {link}
 """)
 
             # INNE
             else:
-                deal = is_general_deal(text, price)
+                deal, market = is_general_deal(text, price)
 
                 if deal:
                     send(f"""
@@ -168,6 +205,7 @@ def check_allegro():
 📦 {text[:80]}
 
 💸 {price} zł
+📊 ~{int(market)} zł
 
 🔗 {link}
 """)
@@ -195,6 +233,9 @@ def check_olx():
             if not is_new(link):
                 continue
 
+            if is_blacklisted(text):
+                continue
+
             price = extract_price(text)
 
             if is_pokemon(text):
@@ -204,10 +245,10 @@ def check_olx():
                     send(f"🟣 OLX POKEMON\n{text[:80]}\n💸 {price}\n{link}")
 
             else:
-                deal = is_general_deal(text, price)
+                deal, market = is_general_deal(text, price)
 
                 if deal:
-                    send(f"{deal}\n{text[:80]}\n💸 {price}\n{link}")
+                    send(f"{deal}\n{text[:80]}\n💸 {price}\n📊 ~{int(market)} zł\n{link}")
 
         except:
             continue
@@ -215,8 +256,8 @@ def check_olx():
 # =========================
 # START
 # =========================
-print("🚀 BOT PRO MAX START")
-send("🚀 BOT PRO MAX DZIAŁA")
+print("🚀 BOT ULTRA START")
+send("🚀 BOT ULTRA DZIAŁA")
 
 while True:
     check_allegro()
