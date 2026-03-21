@@ -106,10 +106,7 @@ shops = [
     ("Strefa TCG", "https://strefa-tcg.pl/", "taDZIK"),
     ("Kanto Drop", "https://kantodrop.pl/", "BRAK"),
     ("Świat Kart", "https://swiatkart.com.pl/", "BRAK"),
-    ("Skład Gier", "https://skladgier.pl/", "BRAK"),
-]
-
-def check_shop(name, url, code):
+    ("Skład Gier", "https://skladgier.pl/", "def check_shop(name, url, code):
     print(f"{name}...")
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -117,23 +114,49 @@ def check_shop(name, url, code):
         r = requests.get(url, headers=headers)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        links = soup.find_all("a")
+        products = soup.find_all("a")
 
-        for l in links[:100]:
-            text = l.text.strip().lower()
+        for p in products[:150]:
+            text = p.text.strip().lower()
 
             if not text:
                 continue
 
-            if not is_pokemon_product(text):
+            # ❌ blokuj admin / koszyk / logowanie
+            link = p.get("href")
+            if not link:
                 continue
 
-            link = l.get("href")
-            if not link:
+            if "wp-admin" in link or "konto" in link or "login" in link:
                 continue
 
             if not link.startswith("http"):
                 link = url + link
+
+            # 🎯 filtr pokemon
+            if not is_pokemon_product(text):
+                continue
+
+            # 🔍 próbujemy znaleźć cenę obok
+            parent = p.parent
+            price = None
+
+            if parent:
+                price_text = parent.get_text()
+
+                import re
+                match = re.search(r"(\d+[,.]?\d*)\s*zł", price_text)
+
+                if match:
+                    price = float(match.group(1).replace(",", "."))
+
+            # ❌ brak ceny → pomijamy
+            if price is None:
+                continue
+
+            # 🎯 filtr okazji
+            if not is_deal(text, price):
+                continue
 
             if link in sent:
                 continue
@@ -141,15 +164,18 @@ def check_shop(name, url, code):
             sent.add(link)
 
             msg = f"""🟢 {name}
-{text[:120]}
+{text[:100]}
 
-Kod: {code}
+💰 {price} zł
+🎟 Kod: {code}
 {link}"""
 
             send(msg)
 
-    except:
-        print(f"Błąd {name}")
+    except Exception as e:
+        print(f"Błąd {name}:", e)
+
+
 
 # ---------- START ----------
 print("START DEAL BOT")
