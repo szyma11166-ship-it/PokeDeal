@@ -11,7 +11,37 @@ sent = set()
 
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+    requests.post(url, data={
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "parse_mode": "HTML"
+    })
+
+# ---------- FILTR OKAZJI ----------
+def is_deal(name, price):
+    name = name.lower()
+
+    # ❌ blokuj drogie zestawy
+    if any(x in name for x in ["display", "collector", "premium", "ultra-premium"]):
+        return False
+
+    # 🎯 ETB
+    if ("etb" in name or "elite trainer box" in name) and price <= 300:
+        return True
+
+    # 🎯 BOOSTER BUNDLE
+    if "booster bundle" in name and price <= 150:
+        return True
+
+    # 🎯 BOOSTER
+    if "booster" in name and "bundle" not in name and price <= 25:
+        return True
+
+    # 🎯 TIN
+    if "tin" in name and price <= 100:
+        return True
+
+    return False
 
 # ---------- FILTR POKEMON ----------
 def is_pokemon_product(text):
@@ -19,7 +49,7 @@ def is_pokemon_product(text):
 
     must_have = ["pokemon", "pokémon"]
     banned = ["lorcana", "mtg", "magic", "yugioh", "one piece", "digimon"]
-    product_types = ["booster", "etb", "box", "tin"]
+    product_types = ["booster", "etb", "box", "tin", "bundle"]
 
     if any(b in text for b in banned):
         return False
@@ -31,6 +61,19 @@ def is_pokemon_product(text):
         return False
 
     return True
+
+# ---------- FORMAT WIADOMOŚCI ----------
+def format_msg(shop, name, price, link, code):
+    return f"""
+<b>🔥 OKAZJA - {shop} 🔥</b>
+
+📦 <b>{name[:100]}</b>
+
+💰 <b>{price} zł</b>
+🎟 Kod: <b>{code}</b>
+
+👉 <a href="{link}">Kup teraz</a>
+"""
 
 # ---------- ALLEGRO ----------
 def check_allegro():
@@ -49,10 +92,12 @@ def check_allegro():
             price = item.select_one("span").text.strip()
             link = item.find("a")["href"]
 
-            if is_pokemon_product(name):
+            price_num = float(price.replace("zł", "").replace(",", ".").split()[0])
+
+            if is_pokemon_product(name) and is_deal(name, price_num):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🔥 ALLEGRO\n{name}\n{price}\n{link}")
+                    send(format_msg("Allegro", name, price_num, link, "BRAK"))
 
         except:
             continue
@@ -73,10 +118,12 @@ def check_rebel():
             price = p.select_one(".price").text.strip()
             link = "https://www.rebel.pl" + p.select_one("a")["href"]
 
-            if is_pokemon_product(name):
+            price_num = float(price.replace("zł", "").replace(",", "."))
+
+            if is_pokemon_product(name) and is_deal(name, price_num):
                 if link not in sent:
                     sent.add(link)
-                    send(f"🟡 REBEL\n{name}\n{price}\n{link}")
+                    send(format_msg("Rebel", name, price_num, link, "BRAK"))
 
         except:
             continue
@@ -135,7 +182,7 @@ def check_shop(name, url, code):
             if not is_pokemon_product(text):
                 continue
 
-            # 🔍 cena (opcjonalna)
+            # 🔍 cena
             parent = p.parent
             price = None
 
@@ -146,25 +193,25 @@ def check_shop(name, url, code):
                 if match:
                     price = float(match.group(1).replace(",", "."))
 
+            if price is None:
+                continue
+
+            # 🎯 filtr okazji
+            if not is_deal(text, price):
+                continue
+
             if link in sent:
                 continue
 
             sent.add(link)
 
-            msg = f"""🟢 {name}
-{text[:100]}
-
-💰 {price if price else "brak ceny"}
-🎟 Kod: {code}
-{link}"""
-
-            send(msg)
+            send(format_msg(name, text, price, link, code))
 
     except Exception as e:
         print(f"Błąd {name}:", e)
 
 # ---------- START ----------
-print("START DEAL BOT")
+print("🚀 START DEAL BOT")
 
 while True:
     try:
