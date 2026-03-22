@@ -1,10 +1,22 @@
-import requests
+limport requests
 from bs4 import BeautifulSoup
 import re
+import os
+
+TOKEN = os.environ.get("TOKEN")
+CHAT_ID = "-1003743099672"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
+
+# =========================
+# TELEGRAM
+# =========================
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+
 
 # =========================
 # CLEAN
@@ -14,7 +26,7 @@ def clean(text):
 
 
 # =========================
-# PRICE (FIX)
+# PRICE
 # =========================
 def get_price(text):
     text = text.lower()
@@ -65,7 +77,7 @@ def is_bundle(title):
 
 
 # =========================
-# VALUE (SMART)
+# VALUE
 # =========================
 def estimate_value(title, price):
     t = clean(title)
@@ -99,16 +111,22 @@ def estimate_value(title, price):
 def send(title, price, value, link, source):
     score = round(value - price)
 
-    # 🔥 tylko realne okazje
     if score < 50:
         return
 
-    print(f"🔥 OKAZJA +{score} zł")
-    print(f"📦 {title[:70]}")
-    print(f"💰 {price} zł | 📊 {round(value)} zł")
-    print(f"🔗 {link}")
-    print(f"📍 {source}")
-    print("")
+    msg = f"""🔥 OKAZJA +{score} zł
+
+📦 {title[:80]}
+
+💰 {price} zł
+📊 ~{round(value)} zł
+
+🔗 {link}
+📍 {source}
+"""
+
+    print(msg)
+    send_telegram(msg)
 
 
 # =========================
@@ -142,7 +160,6 @@ def olx_search(query, label):
 
             value = estimate_value(title, price)
 
-            # 🔥 filtr undervalue
             if value < price * 1.4:
                 continue
 
@@ -185,17 +202,14 @@ def vinted_search(query):
             if value < price * 1.4:
                 continue
 
-            print(f"🔥 OKAZJA")
-            print(f"📦 {text[:70]}")
-            print(f"💰 {price} zł | 📊 {round(value)} zł")
-            print("📍 VINTED\n")
+            send(text, price, value, "brak linku", "VINTED")
 
         except:
             continue
 
 
 # =========================
-# ALLEGRO LOKALNIE
+# ALLEGRO
 # =========================
 def allegro_local(query):
     print("\n🟠 ALLEGRO LOKALNIE...")
@@ -249,24 +263,19 @@ def allegro_local(query):
 # =========================
 # START
 # =========================
-print("🚀 FINAL SNIPER BOT v2")
-print("📤 BOT START | 0")
+print("🚀 FINAL SNIPER BOT v3")
+send_telegram("🚀 BOT START")
 
-# 🟥 POKEMON
 olx_search("pokemon", "POKEMON")
-
-# 🎮 KONSOLE
 olx_search("psp", "PSP")
 olx_search("nintendo 3ds", "3DS")
 olx_search("gameboy", "GAMEBOY")
 
-# 🟣 VINTED
 vinted_search("pokemon")
 vinted_search("psp")
 vinted_search("nintendo 3ds")
 vinted_search("gameboy")
 
-# 🟠 ALLEGRO
 allegro_local("pokemon")
 allegro_local("psp")
 allegro_local("nintendo 3ds")
