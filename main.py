@@ -7,14 +7,14 @@ HEADERS = {
 }
 
 # =========================
-# 🔧 CLEAN
+# CLEAN
 # =========================
 def clean(text):
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
 # =========================
-# 💰 CENA (FIX)
+# PRICE (FIX)
 # =========================
 def get_price(text):
     text = text.lower()
@@ -32,7 +32,7 @@ def get_price(text):
 
 
 # =========================
-# 🚫 FILTRY
+# FILTER
 # =========================
 def is_valid(title):
     t = clean(title)
@@ -42,7 +42,7 @@ def is_valid(title):
         "za sztuk", "każda", "1 szt", "pojedyncz",
         "etui", "ładowark", "kabel", "adapter",
         "bez gry", "brak gry", "nie działa",
-        "do naprawy", "pobierać gry", "przerobion",
+        "do naprawy", "przerobion",
         "konto", "psn", "steam"
     ]
 
@@ -50,57 +50,56 @@ def is_valid(title):
 
 
 # =========================
-# 🎯 ZESTAW
+# BUNDLE
 # =========================
 def is_bundle(title):
     t = clean(title)
 
-    words = ["zestaw", "komplet", "kolekcja", "pakiet", "lot", "bundle", "gier", "games", "+"]
+    words = [
+        "zestaw", "komplet", "kolekcja",
+        "pakiet", "lot", "bundle",
+        "gier", "games", "+"
+    ]
 
     return any(w in t for w in words)
 
 
 # =========================
-# 📊 ESTYMACJA WARTOŚCI
+# VALUE (SMART)
 # =========================
 def estimate_value(title, price):
     t = clean(title)
 
-    value = price
+    multiplier = 1.0
 
-    # 🎮 PSP
-    if "psp" in t:
-        if "gier" in t or "games" in t:
-            value = price * 2
+    if "psp" in t and is_bundle(t):
+        multiplier = 1.8
 
-    # 🎮 3DS
-    if "3ds" in t:
-        if "gier" in t:
-            value = price * 1.8
+    elif "3ds" in t and is_bundle(t):
+        multiplier = 1.6
 
-    # 🟩 GAMEBOY
-    if "gameboy" in t:
+    elif "gameboy" in t:
         if "pokemon" in t:
-            value = price * 2.5
-        elif "gier" in t:
-            value = price * 2
+            multiplier = 2.0
+        elif is_bundle(t):
+            multiplier = 1.7
 
-    # 🟥 POKEMON TCG
-    if "pokemon" in t:
-        if "booster" in t or "box" in t:
-            value = price * 2
-        elif "zestaw" in t:
-            value = price * 1.8
+    elif "pokemon" in t:
+        if "booster box" in t:
+            multiplier = 1.5
+        elif is_bundle(t):
+            multiplier = 1.4
 
-    return value
+    return price * multiplier
 
 
 # =========================
-# 📤 OUTPUT
+# SEND
 # =========================
 def send(title, price, value, link, source):
     score = round(value - price)
 
+    # 🔥 tylko realne okazje
     if score < 50:
         return
 
@@ -113,7 +112,7 @@ def send(title, price, value, link, source):
 
 
 # =========================
-# 🟢 OLX
+# OLX
 # =========================
 def olx_search(query, label):
     print(f"\n🟢 OLX {label}...")
@@ -143,6 +142,10 @@ def olx_search(query, label):
 
             value = estimate_value(title, price)
 
+            # 🔥 filtr undervalue
+            if value < price * 1.4:
+                continue
+
             send(title, price, value, link, f"OLX {label}")
 
         except:
@@ -150,7 +153,7 @@ def olx_search(query, label):
 
 
 # =========================
-# 🟣 VINTED
+# VINTED
 # =========================
 def vinted_search(query):
     print("\n🟣 VINTED...")
@@ -179,14 +182,20 @@ def vinted_search(query):
 
             value = estimate_value(text, price)
 
-            send(text, price, value, "brak linku", "VINTED")
+            if value < price * 1.4:
+                continue
+
+            print(f"🔥 OKAZJA")
+            print(f"📦 {text[:70]}")
+            print(f"💰 {price} zł | 📊 {round(value)} zł")
+            print("📍 VINTED\n")
 
         except:
             continue
 
 
 # =========================
-# 🟠 ALLEGRO LOKALNIE
+# ALLEGRO LOKALNIE
 # =========================
 def allegro_local(query):
     print("\n🟠 ALLEGRO LOKALNIE...")
@@ -195,36 +204,52 @@ def allegro_local(query):
     r = requests.get(url, headers=HEADERS)
 
     soup = BeautifulSoup(r.text, "html.parser")
-    items = soup.select("article")
+    items = soup.select("a")
 
     print(f"📦 {len(items)}")
 
     for item in items:
         try:
-            text = item.get_text()
-            price = get_price(text)
+            title = item.get_text().lower()
+            link = item.get("href")
 
+            if not link:
+                continue
+
+            if not link.startswith("http"):
+                link = "https://allegrolokalnie.pl" + link
+
+            if "promowane" in title:
+                continue
+
+            if not is_valid(title):
+                continue
+
+            price = get_price(title)
             if not price:
                 continue
 
-            if not is_valid(text):
+            if price > 400:
                 continue
 
-            if not is_bundle(text) and price < 50:
+            if not is_bundle(title) and price < 50:
                 continue
 
-            value = estimate_value(text, price)
+            value = estimate_value(title, price)
 
-            send(text, price, value, "brak linku", "ALLEGRO")
+            if value < price * 1.4:
+                continue
+
+            send(title, price, value, link, "ALLEGRO")
 
         except:
             continue
 
 
 # =========================
-# 🚀 START
+# START
 # =========================
-print("🚀 FINAL SNIPER BOT")
+print("🚀 FINAL SNIPER BOT v2")
 print("📤 BOT START | 0")
 
 # 🟥 POKEMON
