@@ -1,7 +1,7 @@
 import requests
+from bs4 import BeautifulSoup
 import time
 import os
-import xml.etree.ElementTree as ET
 import re
 
 TOKEN = os.environ.get("TOKEN")
@@ -9,11 +9,23 @@ CHAT_ID = "-1003743099672"
 
 seen_links = set()
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+
 # =========================
-# SEND
+# SEND (ŁADNIEJSZY)
 # =========================
-def send(title, price, link, tag):
-    msg = f"{tag} • Allegro\n\n📦 {title}\n💸 {price} zł\n\n🔗 {link}"
+def send(title, price, link, tag, shop):
+    msg = f"""
+{tag} • {shop}
+
+📦 {title}
+
+💸 {price} zł
+
+🔗 {link}
+"""
 
     print("📤", title[:60])
 
@@ -29,24 +41,19 @@ def is_new(link):
     seen_links.add(link)
     return True
 
-# =========================
-# PRICE
-# =========================
 def extract_price(text):
-    try:
-        text = text.replace(",", ".")
-        prices = re.findall(r"\d+\.\d+|\d+", text)
-        for p in prices:
-            val = float(p)
-            if val > 20:
-                return val
-    except:
-        return None
+    text = text.replace(",", ".")
+    prices = re.findall(r"\d+\.\d+|\d+", text)
+
+    for p in prices:
+        val = float(p)
+        if val > 20:
+            return val
 
     return None
 
 # =========================
-# POKEMON DEALS
+# POKEMON
 # =========================
 def is_pokemon_deal(name, price):
     name = name.lower()
@@ -63,51 +70,80 @@ def is_pokemon_deal(name, price):
     return None
 
 # =========================
-# ALLEGRO RSS (WORKING)
+# OLX (DZIAŁA NAJLEPIEJ)
 # =========================
-def check_allegro():
-    print("\n🟡 ALLEGRO RSS...")
+def check_olx():
+    print("\n🟢 OLX...")
 
-    url = "https://allegro.pl/rss/oferty?q=pokemon"
+    url = "https://www.olx.pl/oferty/q-pokemon/"
+    r = requests.get(url, headers=HEADERS)
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    try:
-        r = requests.get(url)
-        root = ET.fromstring(r.content)
+    items = soup.find_all("div", {"data-cy": "l-card"})
+    print("📦", len(items))
 
-        items = root.findall(".//item")
-        print("📦 ZNALEZIONO:", len(items))
+    for item in items:
+        try:
+            text = item.get_text().lower()
+            link = item.find("a")["href"]
 
-        for item in items:
-            try:
-                title = item.find("title").text
-                link = item.find("link").text
-                desc = item.find("description").text
-
-                if not is_new(link):
-                    continue
-
-                price = extract_price(desc)
-
-                if not price:
-                    continue
-
-                tag = is_pokemon_deal(title, price)
-
-                if tag:
-                    send(title, price, link, tag)
-
-            except:
+            if not is_new(link):
                 continue
 
-    except:
-        print("❌ RSS ERROR")
+            price = extract_price(text)
+            if not price:
+                continue
+
+            tag = is_pokemon_deal(text, price)
+
+            if tag:
+                send(text[:80], price, link, tag, "OLX")
+
+        except:
+            continue
+
+# =========================
+# AMAZON
+# =========================
+def check_amazon():
+    print("\n🟡 AMAZON...")
+
+    url = "https://www.amazon.pl/s?k=pokemon"
+    r = requests.get(url, headers=HEADERS)
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    items = soup.select("div[data-component-type='s-search-result']")
+    print("📦", len(items))
+
+    for item in items:
+        try:
+            text = item.get_text().lower()
+            link = "https://amazon.pl" + item.find("a")["href"]
+
+            if not is_new(link):
+                continue
+
+            price = extract_price(text)
+            if not price:
+                continue
+
+            tag = is_pokemon_deal(text, price)
+
+            if tag:
+                send(text[:80], price, link, tag, "Amazon")
+
+        except:
+            continue
 
 # =========================
 # START
 # =========================
-print("🚀 RSS BOT START")
-send("START", 0, "", "🚀 SYSTEM")
+print("🚀 FINAL BOT START")
+send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
-    check_allegro()
-    time.sleep(60)
+    check_olx()
+    time.sleep(20)
+
+    check_amazon()
+    time.sleep(40)
