@@ -14,24 +14,20 @@ def clean(text):
 
 
 # =========================
-# 💰 CENA (FINAL FIX)
+# 💰 CENA (FIX)
 # =========================
 def get_price(text):
     text = text.lower()
 
-    # usuń rzeczy które psują parsing
     text = re.sub(r"\d+\s*gb", "", text)
     text = re.sub(r"\d+%", "", text)
 
-    # szukaj tylko zł
     matches = re.findall(r"(\d{1,5}(?:[\.,]\d{1,2})?)\s*zł", text)
 
     if not matches:
         return None
 
-    # bierz NAJNIŻSZĄ sensowną (chroni przed scam listingami)
     prices = [float(m.replace(",", ".")) for m in matches]
-
     return min(prices)
 
 
@@ -54,26 +50,65 @@ def is_valid(title):
 
 
 # =========================
-# 🎯 ZESTAWY (WAŻNE)
+# 🎯 ZESTAW
 # =========================
 def is_bundle(title):
     t = clean(title)
 
-    bundle_words = [
-        "zestaw", "komplet", "kolekcja",
-        "pakiet", "lot", "bundle",
-        "gier", "games", "x", "+"
-    ]
+    words = ["zestaw", "komplet", "kolekcja", "pakiet", "lot", "bundle", "gier", "games", "+"]
 
-    return any(w in t for w in bundle_words)
+    return any(w in t for w in words)
+
+
+# =========================
+# 📊 ESTYMACJA WARTOŚCI
+# =========================
+def estimate_value(title, price):
+    t = clean(title)
+
+    value = price
+
+    # 🎮 PSP
+    if "psp" in t:
+        if "gier" in t or "games" in t:
+            value = price * 2
+
+    # 🎮 3DS
+    if "3ds" in t:
+        if "gier" in t:
+            value = price * 1.8
+
+    # 🟩 GAMEBOY
+    if "gameboy" in t:
+        if "pokemon" in t:
+            value = price * 2.5
+        elif "gier" in t:
+            value = price * 2
+
+    # 🟥 POKEMON TCG
+    if "pokemon" in t:
+        if "booster" in t or "box" in t:
+            value = price * 2
+        elif "zestaw" in t:
+            value = price * 1.8
+
+    return value
 
 
 # =========================
 # 📤 OUTPUT
 # =========================
-def send(title, price, link, source):
-    print(f"📤 {source} | {title[:70]} | {price} zł")
-    print(link)
+def send(title, price, value, link, source):
+    score = round(value - price)
+
+    if score < 50:
+        return
+
+    print(f"🔥 OKAZJA +{score} zł")
+    print(f"📦 {title[:70]}")
+    print(f"💰 {price} zł | 📊 {round(value)} zł")
+    print(f"🔗 {link}")
+    print(f"📍 {source}")
     print("")
 
 
@@ -88,28 +123,27 @@ def olx_search(query, label):
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("div[data-cy='l-card']")
-
     print(f"📦 {len(items)}")
 
     for item in items:
         try:
             title = item.select_one("h6").text
             link = item.select_one("a")["href"]
+            text = item.get_text()
 
-            price = get_price(item.get_text())
-
+            price = get_price(text)
             if not price:
                 continue
 
             if not is_valid(title):
                 continue
 
-            # 🔥 tylko sensowne flippy
             if not is_bundle(title) and price < 50:
                 continue
 
-            print(f"✅ {title[:60]}")
-            send(title, price, link, f"OLX {label}")
+            value = estimate_value(title, price)
+
+            send(title, price, value, link, f"OLX {label}")
 
         except:
             continue
@@ -143,7 +177,9 @@ def vinted_search(query):
             if not is_bundle(text) and price < 50:
                 continue
 
-            print(f"📤 VINTED | {text[:60]} | {price} zł")
+            value = estimate_value(text, price)
+
+            send(text, price, value, "brak linku", "VINTED")
 
         except:
             continue
@@ -165,19 +201,21 @@ def allegro_local(query):
 
     for item in items:
         try:
-            title = item.get_text()
-            price = get_price(title)
+            text = item.get_text()
+            price = get_price(text)
 
             if not price:
                 continue
 
-            if not is_valid(title):
+            if not is_valid(text):
                 continue
 
-            if not is_bundle(title) and price < 50:
+            if not is_bundle(text) and price < 50:
                 continue
 
-            print(f"📤 ALLEGRO | {title[:60]} | {price} zł")
+            value = estimate_value(text, price)
+
+            send(text, price, value, "brak linku", "ALLEGRO")
 
         except:
             continue
@@ -189,7 +227,7 @@ def allegro_local(query):
 print("🚀 FINAL SNIPER BOT")
 print("📤 BOT START | 0")
 
-# 🎯 POKEMON
+# 🟥 POKEMON
 olx_search("pokemon", "POKEMON")
 
 # 🎮 KONSOLE
