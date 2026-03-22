@@ -14,17 +14,18 @@ HEADERS = {
 }
 
 # =========================
-# BLACKLIST PRO++
+# BLACKLIST PRO MAX
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
     "funko", "maskotka", "bulk", "mix",
     "pojedyncza", "single", "karta", "karty",
-    "promo", "gx", "v", "ex", "vmax", "vstar",
+    "promo", "gx", "vmax", "vstar",
     "ładowarka", "zasilacz", "kabel", "adapter",
     "gra", "gry", "game", "cd", "dvd",
     "plecak", "torba", "etui", "case",
-    "lego", "zestaw lego"
+    "lego",
+    "uszkodz", "nie działa", "na części"
 ]
 
 bad_languages = [
@@ -46,10 +47,14 @@ def send(title, price, link, tag, shop):
 
     print("📤", shop, "|", title[:60], "|", price)
 
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        data={"chat_id": CHAT_ID, "text": msg}
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=5
+        )
+    except:
+        pass
 
 # =========================
 # HELPERS
@@ -62,9 +67,11 @@ def is_new(link):
 
 def extract_price(text):
     text = text.lower().replace(",", ".")
+
     match = re.search(r"(\d+[.,]?\d*)\s*zł", text)
     if match:
         return float(match.group(1))
+
     return None
 
 def is_bad(name):
@@ -97,7 +104,7 @@ def pokemon_level(name, price):
     return None
 
 # =========================
-# KONSOLE (TYLKO SPRZĘT)
+# KONSOLE
 # =========================
 def is_console(name):
     return any(k in name for k in [
@@ -105,9 +112,16 @@ def is_console(name):
     ])
 
 def is_real_console(name):
-    return any(k in name for k in [
-        "konsola", "console", "sprzedam", "zestaw", "gb", "edition"
-    ])
+    name = name.lower()
+
+    if any(x in name for x in [
+        "gra", "gry", "game", "cd", "dvd",
+        "ładowarka", "kabel", "adapter",
+        "etui", "case", "pokrowiec"
+    ]):
+        return False
+
+    return True
 
 def console_level(name, price):
     if "psp" in name and price < 220:
@@ -126,59 +140,150 @@ def console_level(name, price):
 def scan_olx(url, label):
     print(f"\n🟢 OLX {label}...")
 
-    r = requests.get(url, headers=HEADERS)
-    soup = BeautifulSoup(r.text, "html.parser")
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.find_all("div", {"data-cy": "l-card"})
-    print("📦 ZNALEZIONO:", len(items))
+        items = soup.find_all("div", {"data-cy": "l-card"})
+        print("📦", len(items))
 
-    for item in items:
-        try:
-            text = item.get_text().lower()
+        for item in items:
+            try:
+                text = item.get_text().lower()
+                link = item.find("a")["href"]
 
-            link = item.find("a")["href"]
-            if not link.startswith("http"):
-                link = "https://www.olx.pl" + link
+                if not link.startswith("http"):
+                    link = "https://www.olx.pl" + link
 
-            if not is_new(link) or is_bad(text):
+                if not is_new(link) or is_bad(text):
+                    continue
+
+                price = extract_price(text)
+                if not price:
+                    continue
+
+                tag = None
+
+                if is_pokemon(text) and is_real_pokemon(text):
+                    tag = pokemon_level(text, price)
+
+                elif is_console(text) and is_real_console(text):
+                    tag = console_level(text, price)
+
+                if tag:
+                    send(text[:80], price, link, tag, f"OLX {label}")
+
+            except:
                 continue
+    except:
+        print("❌ OLX ERROR")
 
-            price = extract_price(text)
-            if not price:
+# =========================
+# VINTED
+# =========================
+def scan_vinted():
+    print("\n🟣 VINTED...")
+
+    try:
+        url = "https://www.vinted.pl/catalog?search_text=pokemon"
+        r = requests.get(url, headers=HEADERS, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        items = soup.find_all("a", href=True)
+        print("📦", len(items))
+
+        for item in items:
+            try:
+                text = item.get_text().lower()
+                link = "https://www.vinted.pl" + item["href"]
+
+                if not is_new(link) or is_bad(text):
+                    continue
+
+                price = extract_price(text)
+                if not price:
+                    continue
+
+                if is_pokemon(text):
+                    tag = pokemon_level(text, price)
+                    if tag:
+                        send(text[:80], price, link, tag, "VINTED")
+
+                elif is_console(text):
+                    tag = console_level(text, price)
+                    if tag:
+                        send(text[:80], price, link, tag, "VINTED")
+
+            except:
                 continue
+    except:
+        print("❌ VINTED ERROR")
 
-            tag = None
+# =========================
+# ALLEGRO LOKALNIE (FIX RSS)
+# =========================
+def scan_allegro_local():
+    print("\n🟠 ALLEGRO LOKALNIE...")
 
-            # 🎯 POKEMON
-            if is_pokemon(text) and is_real_pokemon(text):
-                tag = pokemon_level(text, price)
+    try:
+        url = "https://allegrolokalnie.pl/oferty/q/pokemon?order=new"
+        r = requests.get(url, headers=HEADERS, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-            # 🎮 KONSOLE (TYLKO PRAWDZIWE)
-            elif is_console(text) and is_real_console(text):
-                tag = console_level(text, price)
+        items = soup.find_all("a", href=True)
+        print("📦", len(items))
 
-            if tag:
-                print("✅", text[:60])
-                send(text[:80], price, link, tag, f"OLX {label}")
+        for item in items:
+            try:
+                text = item.get_text().lower()
+                link = item["href"]
 
-        except:
-            continue
+                if not link.startswith("http"):
+                    link = "https://allegrolokalnie.pl" + link
+
+                if not is_new(link) or is_bad(text):
+                    continue
+
+                price = extract_price(text)
+                if not price:
+                    continue
+
+                if is_pokemon(text):
+                    tag = pokemon_level(text, price)
+                    if tag:
+                        send(text[:80], price, link, tag, "ALLEGRO")
+
+                elif is_console(text):
+                    tag = console_level(text, price)
+                    if tag:
+                        send(text[:80], price, link, tag, "ALLEGRO")
+
+            except:
+                continue
+    except:
+        print("❌ ALLEGRO ERROR")
 
 # =========================
 # START
 # =========================
-print("🚀 FINAL SNIPER BOT")
+print("🚀 FINAL ULTRA FLIP BOT")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
     scan_olx("https://www.olx.pl/oferty/q-pokemon/", "POKEMON")
-    time.sleep(12)
+    time.sleep(10)
 
     scan_olx("https://www.olx.pl/oferty/q-psp/", "PSP")
-    time.sleep(12)
+    time.sleep(10)
 
     scan_olx("https://www.olx.pl/oferty/q-nintendo-3ds/", "3DS")
-    time.sleep(12)
+    time.sleep(10)
 
     scan_olx("https://www.olx.pl/oferty/q-gameboy/", "GAMEBOY")
+    time.sleep(10)
+
+    scan_vinted()
+    time.sleep(10)
+
+    scan_allegro_local()
     time.sleep(20)
