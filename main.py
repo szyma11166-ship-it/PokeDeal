@@ -1,4 +1,4 @@
-limport requests
+import requests
 from bs4 import BeautifulSoup
 import re
 import os
@@ -14,6 +14,7 @@ HEADERS = {
 # TELEGRAM
 # =========================
 def send_telegram(msg):
+    print(f"📤 WYSYŁAM:\n{msg[:120]}\n")
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
@@ -26,11 +27,12 @@ def clean(text):
 
 
 # =========================
-# PRICE
+# PRICE FIX (NAPRAWIONE GB)
 # =========================
 def get_price(text):
     text = text.lower()
 
+    # usuwamy GB i %
     text = re.sub(r"\d+\s*gb", "", text)
     text = re.sub(r"\d+%", "", text)
 
@@ -40,6 +42,7 @@ def get_price(text):
         return None
 
     prices = [float(m.replace(",", ".")) for m in matches]
+
     return min(prices)
 
 
@@ -50,12 +53,13 @@ def is_valid(title):
     t = clean(title)
 
     banned = [
-        "uszkodz", "części", "na części", "obudow",
-        "za sztuk", "każda", "1 szt", "pojedyncz",
-        "etui", "ładowark", "kabel", "adapter",
-        "bez gry", "brak gry", "nie działa",
-        "do naprawy", "przerobion",
-        "konto", "psn", "steam"
+        "uszkodz", "części", "na części",
+        "etui", "ładowark", "kabel",
+        "bez gry", "nie działa",
+        "konto", "psn",
+        "naklejka", "tazo",
+        "bulk", "losowe",
+        "japoń", "german", "deutsch"
     ]
 
     return not any(b in t for b in banned)
@@ -67,13 +71,10 @@ def is_valid(title):
 def is_bundle(title):
     t = clean(title)
 
-    words = [
-        "zestaw", "komplet", "kolekcja",
-        "pakiet", "lot", "bundle",
-        "gier", "games", "+"
-    ]
-
-    return any(w in t for w in words)
+    return any(w in t for w in [
+        "zestaw", "pakiet", "kolekcja",
+        "bundle", "lot", "+"
+    ])
 
 
 # =========================
@@ -93,8 +94,8 @@ def estimate_value(title, price):
     elif "gameboy" in t:
         if "pokemon" in t:
             multiplier = 2.0
-        elif is_bundle(t):
-            multiplier = 1.7
+        else:
+            multiplier = 1.6
 
     elif "pokemon" in t:
         if "booster box" in t:
@@ -106,26 +107,45 @@ def estimate_value(title, price):
 
 
 # =========================
+# POZIOM OKAZJI
+# =========================
+def get_level(price, value):
+    diff = value - price
+    ratio = value / price
+
+    if ratio >= 1.8 or diff > 200:
+        return "🚀 MEGA FLIP"
+    elif ratio >= 1.5:
+        return "🔥 DOBRA OKAZJA"
+    elif ratio >= 1.3:
+        return "💰 OKAZJA"
+
+    return None
+
+
+# =========================
 # SEND
 # =========================
 def send(title, price, value, link, source):
-    score = round(value - price)
+    level = get_level(price, value)
 
-    if score < 50:
+    if not level:
         return
 
-    msg = f"""🔥 OKAZJA +{score} zł
+    profit = round(value - price)
 
-📦 {title[:80]}
+    msg = f"""{level}
+
+📦 {title[:90]}
 
 💰 {price} zł
 📊 ~{round(value)} zł
+📈 +{profit} zł
 
 🔗 {link}
 📍 {source}
 """
 
-    print(msg)
     send_telegram(msg)
 
 
@@ -140,7 +160,7 @@ def olx_search(query, label):
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("div[data-cy='l-card']")
-    print(f"📦 {len(items)}")
+    print(f"📦 ZNALEZIONO: {len(items)}")
 
     for item in items:
         try:
@@ -160,9 +180,6 @@ def olx_search(query, label):
 
             value = estimate_value(title, price)
 
-            if value < price * 1.4:
-                continue
-
             send(title, price, value, link, f"OLX {label}")
 
         except:
@@ -181,7 +198,7 @@ def vinted_search(query):
     soup = BeautifulSoup(r.text, "html.parser")
     items = soup.select("div.feed-grid__item")
 
-    print(f"📦 {len(items)}")
+    print(f"📦 ZNALEZIONO: {len(items)}")
 
     for item in items:
         try:
@@ -199,9 +216,6 @@ def vinted_search(query):
 
             value = estimate_value(text, price)
 
-            if value < price * 1.4:
-                continue
-
             send(text, price, value, "brak linku", "VINTED")
 
         except:
@@ -209,7 +223,7 @@ def vinted_search(query):
 
 
 # =========================
-# ALLEGRO
+# ALLEGRO LOKALNIE
 # =========================
 def allegro_local(query):
     print("\n🟠 ALLEGRO LOKALNIE...")
@@ -220,11 +234,11 @@ def allegro_local(query):
     soup = BeautifulSoup(r.text, "html.parser")
     items = soup.select("a")
 
-    print(f"📦 {len(items)}")
+    print(f"📦 ZNALEZIONO: {len(items)}")
 
     for item in items:
         try:
-            title = item.get_text().lower()
+            title = item.get_text()
             link = item.get("href")
 
             if not link:
@@ -233,7 +247,7 @@ def allegro_local(query):
             if not link.startswith("http"):
                 link = "https://allegrolokalnie.pl" + link
 
-            if "promowane" in title:
+            if "promowane" in title.lower():
                 continue
 
             if not is_valid(title):
@@ -243,16 +257,10 @@ def allegro_local(query):
             if not price:
                 continue
 
-            if price > 400:
-                continue
-
             if not is_bundle(title) and price < 50:
                 continue
 
             value = estimate_value(title, price)
-
-            if value < price * 1.4:
-                continue
 
             send(title, price, value, link, "ALLEGRO")
 
@@ -263,7 +271,8 @@ def allegro_local(query):
 # =========================
 # START
 # =========================
-print("🚀 FINAL SNIPER BOT v3")
+print("🚀 FINAL SNIPER BOT v4")
+
 send_telegram("🚀 BOT START")
 
 olx_search("pokemon", "POKEMON")
