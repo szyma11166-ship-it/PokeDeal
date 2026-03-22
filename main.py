@@ -39,6 +39,8 @@ def send(title, price, link, tag, market=None, shop=""):
 
     msg += f"\n🔗 {link}"
 
+    print("📤 WYSYŁAM:", msg[:100])  # DEBUG
+
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
@@ -113,9 +115,12 @@ def get_market_price(name):
                     prices.append(val)
 
         if len(prices) >= 3:
-            return sum(prices)/len(prices)
+            avg = sum(prices)/len(prices)
+            print("📊 MARKET:", avg)  # DEBUG
+            return avg
 
     except:
+        print("❌ MARKET ERROR")  # DEBUG
         return None
 
     return None
@@ -128,6 +133,7 @@ def rate_deal(price, market):
         return None
 
     ratio = price / market
+    print(f"📉 RATIO: {ratio:.2f}")  # DEBUG
 
     if ratio < 0.5:
         return "🔥🔥🔥 MEGA FLIP"
@@ -139,36 +145,45 @@ def rate_deal(price, market):
     return None
 
 def is_general_deal(name, price):
+    print("🔎 SPRAWDZAM:", name[:50], "|", price)  # DEBUG
+
     market = get_market_price(name)
 
     if market:
         rating = rate_deal(price, market)
         if rating:
+            print("✅ OKAZJA!")  # DEBUG
             return rating, market
 
     if price < 150:
+        print("💰 TANIE fallback")  # DEBUG
         return "💰 TANIE", price
 
+    print("❌ ODRZUCONE")  # DEBUG
     return None, None
 
 # =========================
 # ALLEGRO
 # =========================
 def check_allegro():
+    print("\n🟡 SPRAWDZAM ALLEGRO...")  # DEBUG
+
     url = "https://allegro.pl/listing?string=pokemon%20lego%20ps5%20xbox"
     r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
     soup = BeautifulSoup(r.text, "html.parser")
 
-    for item in soup.find_all("article"):
+    items = soup.find_all("article")
+    print("📦 ZNALEZIONO:", len(items))  # DEBUG
+
+    for item in items:
         try:
             text = item.get_text().lower()
             link = "https://allegro.pl" + item.find("a")["href"]
 
-            if not is_new(link) or is_blacklisted(text):
-                continue
-
             price = extract_price(text)
-            if not price:
+            print("💸 CENA:", price)  # DEBUG
+
+            if not price or is_blacklisted(text) or not is_new(link):
                 continue
 
             if is_pokemon(text):
@@ -184,116 +199,11 @@ def check_allegro():
             continue
 
 # =========================
-# OLX
-# =========================
-def check_olx():
-    url = "https://www.olx.pl/oferty/q-ps5/"
-    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    for item in soup.find_all("div", {"data-cy": "l-card"}):
-        try:
-            text = item.get_text().lower()
-            link = item.find("a")["href"]
-
-            if not is_new(link) or is_blacklisted(text):
-                continue
-
-            price = extract_price(text)
-            if not price:
-                continue
-
-            tag, market = is_general_deal(text, price)
-            if tag:
-                send(text[:80], price, link, tag, market, "OLX")
-
-        except:
-            continue
-
-# =========================
-# AMAZON
-# =========================
-def check_amazon():
-    url = "https://www.amazon.pl/s?k=pokemon+lego+ps5"
-    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    for item in soup.select("div[data-component-type='s-search-result']"):
-        try:
-            text = item.get_text().lower()
-            link = "https://amazon.pl" + item.find("a")["href"]
-
-            if not is_new(link) or is_blacklisted(text):
-                continue
-
-            price = extract_price(text)
-            if not price:
-                continue
-
-            if is_pokemon(text):
-                tag = is_pokemon_deal(text, price)
-                if tag:
-                    send(text[:80], price, link, tag, shop="Amazon")
-
-        except:
-            continue
-
-# =========================
-# POKEMON SKLEPY
-# =========================
-shops = {
-    "Strefa Kart": "https://strefakart.pl",
-    "LootQuest": "https://lootquest.pl",
-    "Rebel": "https://www.rebel.pl",
-    "Świat Kart": "https://swiatkart.com.pl",
-    "Skład Gier": "https://skladgier.pl",
-    "Kanto Drop": "https://kantodrop.pl",
-    "Strefa TCG": "https://strefa-tcg.pl"
-}
-
-def check_pokemon_shops():
-    for name, url in shops.items():
-        try:
-            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-            soup = BeautifulSoup(r.text, "html.parser")
-
-            for a in soup.find_all("a", href=True):
-                text = a.get_text().lower()
-
-                if not is_pokemon(text):
-                    continue
-
-                link = a["href"]
-                if not link.startswith("http"):
-                    link = url + link
-
-                if not is_new(link):
-                    continue
-
-                price = extract_price(text)
-
-                tag = is_pokemon_deal(text, price)
-                if tag:
-                    send(text[:80], price, link, tag, shop=name)
-
-        except:
-            continue
-
-# =========================
 # START
 # =========================
-print("🚀 BOT ALL-IN-ONE START")
-send("BOT START", "", "", "🚀 SYSTEM")
+print("🚀 DEBUG BOT START")
+send("DEBUG START", "", "", "🚀 SYSTEM")
 
 while True:
     check_allegro()
-    time.sleep(10)
-
-    check_olx()
-    time.sleep(15)
-
-    check_amazon()
-    time.sleep(15)
-
-    check_pokemon_shops()
     time.sleep(30)
