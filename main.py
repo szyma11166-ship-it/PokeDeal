@@ -4,7 +4,8 @@ import re
 import os
 
 HEADERS = {
-    "User-Agent": "Mozilla/
+    "User-Agent": "Mozilla/5.0"
+}
 
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = -1003743099672
