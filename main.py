@@ -29,7 +29,7 @@ bad_languages = [
 ]
 
 # =========================
-# SEND (ŁADNE)
+# SEND
 # =========================
 def send(title, price, link, tag, shop):
     msg = f"""
@@ -37,11 +37,11 @@ def send(title, price, link, tag, shop):
 
 📦 {title}
 
-💸 {price} zł
+💸 {price if price else 'brak'} zł
 
 🔗 {link}
 """
-    print("📤", title[:60], "|", price)
+    print("📤", shop, "|", title[:60])
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
@@ -87,38 +87,33 @@ def is_real(name):
 def get_level(name, price):
     name = name.lower()
 
-    if "elite trainer box" in name and price < 280:
-        return "🔥🔥🔥 ETB FLIP"
-
-    if "booster bundle" in name and price < 110:
-        return "🔥🔥 BUNDLE"
-
-    if "booster" in name and "box" not in name and price < 22:
-        return "🔥 BOOSTER"
-
-    if "ultra premium" in name and price < 550:
-        return "🔥🔥🔥 PREMIUM"
+    if price:
+        if "elite trainer box" in name and price < 280:
+            return "🔥🔥🔥 ETB FLIP"
+        if "booster bundle" in name and price < 110:
+            return "🔥🔥 BUNDLE"
+        if "booster" in name and "box" not in name and price < 22:
+            return "🔥 BOOSTER"
+        if "ultra premium" in name and price < 550:
+            return "🔥🔥🔥 PREMIUM"
 
     return None
 
 # =========================
-# OLX (SNIPER)
+# OLX
 # =========================
 def check_olx():
-    print("\n🟢 OLX (SNIPER)...")
+    print("\n🟢 OLX...")
 
     url = "https://www.olx.pl/oferty/q-pokemon/"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.find_all("div", {"data-cy": "l-card"})
-    print("📦", len(items))
-
-    for item in items:
+    for item in soup.find_all("div", {"data-cy": "l-card"}):
         try:
             text = item.get_text().lower()
-
             link = item.find("a")["href"]
+
             if not link.startswith("http"):
                 link = "https://www.olx.pl" + link
 
@@ -132,9 +127,6 @@ def check_olx():
                 continue
 
             price = extract_price(text)
-            if not price:
-                continue
-
             tag = get_level(text, price)
 
             if tag:
@@ -144,7 +136,7 @@ def check_olx():
             continue
 
 # =========================
-# VINTED (🔥 FLIPY)
+# VINTED
 # =========================
 def check_vinted():
     print("\n🟣 VINTED...")
@@ -174,9 +166,6 @@ def check_vinted():
                 continue
 
             price = extract_price(text)
-            if not price:
-                continue
-
             tag = get_level(text, price)
 
             if tag:
@@ -195,10 +184,7 @@ def check_amazon():
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.select("div[data-component-type='s-search-result']")
-    print("📦", len(items))
-
-    for item in items:
+    for item in soup.select("div[data-component-type='s-search-result']"):
         try:
             text = item.get_text().lower()
             link = "https://amazon.pl" + item.find("a")["href"]
@@ -213,9 +199,6 @@ def check_amazon():
                 continue
 
             price = extract_price(text)
-            if not price:
-                continue
-
             tag = get_level(text, price)
 
             if tag:
@@ -225,9 +208,62 @@ def check_amazon():
             continue
 
 # =========================
+# SKLEPY
+# =========================
+shops = {
+    "Rebel": "https://www.rebel.pl",
+    "LootQuest": "https://lootquest.pl",
+    "Strefa Kart": "https://strefakart.pl",
+    "Strefa TCG": "https://strefa-tcg.pl",
+    "Kanto Drop": "https://kantodrop.pl",
+    "Świat Kart": "https://swiatkart.com.pl",
+    "Skład Gier": "https://skladgier.pl"
+}
+
+def check_shops():
+    print("\n🏪 SKLEPY...")
+
+    for name, url in shops.items():
+        try:
+            r = requests.get(url, headers=HEADERS)
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            for a in soup.find_all("a", href=True):
+                text = a.get_text().lower()
+
+                if "pokemon" not in text:
+                    continue
+
+                link = a["href"]
+                if not link.startswith("http"):
+                    link = url + link
+
+                # pomijamy kategorie
+                if "product" not in link and "produkt" not in link:
+                    continue
+
+                if not is_new(link):
+                    continue
+
+                if is_bad(text):
+                    continue
+
+                if not is_real(text):
+                    continue
+
+                price = extract_price(text)
+                tag = get_level(text, price)
+
+                if tag:
+                    send(text[:80], price, link, tag, name)
+
+        except:
+            continue
+
+# =========================
 # START
 # =========================
-print("🚀 SNIPER BOT START")
+print("🚀 FULL BOT (ALL SOURCES)")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
@@ -238,4 +274,7 @@ while True:
     time.sleep(20)
 
     check_amazon()
-    time.sleep(30)
+    time.sleep(25)
+
+    check_shops()
+    time.sleep(40)
