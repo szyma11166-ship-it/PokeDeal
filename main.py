@@ -10,11 +10,12 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
+MAX_PRICE = 300  # 🔥 TWÓJ LIMIT
+
 # =========================
 # TELEGRAM
 # =========================
-def send_telegram(msg):
-    print(f"📤 WYSYŁAM:\n{msg[:120]}\n")
+def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
@@ -22,32 +23,30 @@ def send_telegram(msg):
 # =========================
 # CLEAN
 # =========================
-def clean(text):
-    return re.sub(r"\s+", " ", text).strip().lower()
+def clean(t):
+    return re.sub(r"\s+", " ", t).lower()
 
 
 # =========================
-# PRICE FIX (NAPRAWIONE GB)
+# PRICE (NAPRAWIONE)
 # =========================
 def get_price(text):
     text = text.lower()
 
-    # usuwamy GB i %
+    # usuń GB i %
     text = re.sub(r"\d+\s*gb", "", text)
     text = re.sub(r"\d+%", "", text)
 
-    matches = re.findall(r"(\d{1,5}(?:[\.,]\d{1,2})?)\s*zł", text)
+    m = re.findall(r"(\d{1,5})\s*zł", text)
 
-    if not matches:
+    if not m:
         return None
 
-    prices = [float(m.replace(",", ".")) for m in matches]
-
-    return min(prices)
+    return float(min(m))
 
 
 # =========================
-# FILTER
+# FILTR
 # =========================
 def is_valid(title):
     t = clean(title)
@@ -58,7 +57,6 @@ def is_valid(title):
         "bez gry", "nie działa",
         "konto", "psn",
         "naklejka", "tazo",
-        "bulk", "losowe",
         "japoń", "german", "deutsch"
     ]
 
@@ -78,98 +76,42 @@ def is_bundle(title):
 
 
 # =========================
-# VALUE
+# FORMAT
 # =========================
-def estimate_value(title, price):
-    t = clean(title)
-
-    multiplier = 1.0
-
-    if "psp" in t and is_bundle(t):
-        multiplier = 1.8
-
-    elif "3ds" in t and is_bundle(t):
-        multiplier = 1.6
-
-    elif "gameboy" in t:
-        if "pokemon" in t:
-            multiplier = 2.0
-        else:
-            multiplier = 1.6
-
-    elif "pokemon" in t:
-        if "booster box" in t:
-            multiplier = 1.5
-        elif is_bundle(t):
-            multiplier = 1.4
-
-    return price * multiplier
-
-
-# =========================
-# POZIOM OKAZJI
-# =========================
-def get_level(price, value):
-    diff = value - price
-    ratio = value / price
-
-    if ratio >= 1.8 or diff > 200:
-        return "🚀 MEGA FLIP"
-    elif ratio >= 1.5:
-        return "🔥 DOBRA OKAZJA"
-    elif ratio >= 1.3:
-        return "💰 OKAZJA"
-
-    return None
-
-
-# =========================
-# SEND
-# =========================
-def send(title, price, value, link, source):
-    level = get_level(price, value)
-
-    if not level:
-        return
-
-    profit = round(value - price)
-
-    msg = f"""{level}
-
-📦 {title[:90]}
+def format_msg(title, price, link, source):
+    return f"""📦 {title[:90]}
 
 💰 {price} zł
-📊 ~{round(value)} zł
-📈 +{profit} zł
 
 🔗 {link}
 📍 {source}
 """
 
-    send_telegram(msg)
-
 
 # =========================
 # OLX
 # =========================
-def olx_search(query, label):
-    print(f"\n🟢 OLX {label}...")
+def olx(query, label):
+    print(f"\n🟢 OLX {label}")
 
     url = f"https://www.olx.pl/oferty/q-{query}/"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("div[data-cy='l-card']")
-    print(f"📦 ZNALEZIONO: {len(items)}")
+    print(f"📦 {len(items)}")
 
-    for item in items:
+    for i in items:
         try:
-            title = item.select_one("h6").text
-            link = item.select_one("a")["href"]
-            text = item.get_text()
+            title = i.select_one("h6").text
+            link = i.select_one("a")["href"]
+            text = i.get_text()
 
             price = get_price(text)
             if not price:
+                continue
+
+            if price > MAX_PRICE:
                 continue
 
             if not is_valid(title):
@@ -178,34 +120,41 @@ def olx_search(query, label):
             if not is_bundle(title) and price < 50:
                 continue
 
-            value = estimate_value(title, price)
-
-            send(title, price, value, link, f"OLX {label}")
+            send(format_msg(title, price, link, f"OLX {label}"))
 
         except:
             continue
 
 
 # =========================
-# VINTED
+# VINTED (NAPRAWIONY LINK)
 # =========================
-def vinted_search(query):
-    print("\n🟣 VINTED...")
+def vinted(query):
+    print("\n🟣 VINTED")
 
     url = f"https://www.vinted.pl/catalog?search_text={query}"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
-    items = soup.select("div.feed-grid__item")
 
-    print(f"📦 ZNALEZIONO: {len(items)}")
+    items = soup.select("a")
 
-    for item in items:
+    print(f"📦 {len(items)}")
+
+    for i in items:
         try:
-            text = item.get_text()
-            price = get_price(text)
+            link = i.get("href")
 
+            if not link or "/items/" not in link:
+                continue
+
+            full_link = "https://www.vinted.pl" + link
+            text = i.get_text()
+
+            price = get_price(text)
             if not price:
+                continue
+
+            if price > MAX_PRICE:
                 continue
 
             if not is_valid(text):
@@ -214,32 +163,30 @@ def vinted_search(query):
             if not is_bundle(text) and price < 50:
                 continue
 
-            value = estimate_value(text, price)
-
-            send(text, price, value, "brak linku", "VINTED")
+            send(format_msg(text, price, full_link, "VINTED"))
 
         except:
             continue
 
 
 # =========================
-# ALLEGRO LOKALNIE
+# ALLEGRO (NAPRAWIONE)
 # =========================
-def allegro_local(query):
-    print("\n🟠 ALLEGRO LOKALNIE...")
+def allegro(query):
+    print("\n🟠 ALLEGRO")
 
     url = f"https://allegrolokalnie.pl/oferty/q/{query}"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
+
     items = soup.select("a")
 
-    print(f"📦 ZNALEZIONO: {len(items)}")
+    print(f"📦 {len(items)}")
 
-    for item in items:
+    for i in items:
         try:
-            title = item.get_text()
-            link = item.get("href")
+            title = i.get_text()
+            link = i.get("href")
 
             if not link:
                 continue
@@ -250,19 +197,20 @@ def allegro_local(query):
             if "promowane" in title.lower():
                 continue
 
-            if not is_valid(title):
-                continue
-
             price = get_price(title)
             if not price:
+                continue
+
+            if price > MAX_PRICE:
+                continue
+
+            if not is_valid(title):
                 continue
 
             if not is_bundle(title) and price < 50:
                 continue
 
-            value = estimate_value(title, price)
-
-            send(title, price, value, link, "ALLEGRO")
+            send(format_msg(title, price, link, "ALLEGRO"))
 
         except:
             continue
@@ -271,21 +219,21 @@ def allegro_local(query):
 # =========================
 # START
 # =========================
-print("🚀 FINAL SNIPER BOT v4")
+print("🚀 FINAL SIMPLE BOT")
 
-send_telegram("🚀 BOT START")
+send("🚀 BOT START")
 
-olx_search("pokemon", "POKEMON")
-olx_search("psp", "PSP")
-olx_search("nintendo 3ds", "3DS")
-olx_search("gameboy", "GAMEBOY")
+olx("pokemon", "POKEMON")
+olx("psp", "PSP")
+olx("nintendo 3ds", "3DS")
+olx("gameboy", "GAMEBOY")
 
-vinted_search("pokemon")
-vinted_search("psp")
-vinted_search("nintendo 3ds")
-vinted_search("gameboy")
+vinted("pokemon")
+vinted("psp")
+vinted("nintendo 3ds")
+vinted("gameboy")
 
-allegro_local("pokemon")
-allegro_local("psp")
-allegro_local("nintendo 3ds")
-allegro_local("gameboy")
+allegro("pokemon")
+allegro("psp")
+allegro("nintendo 3ds")
+allegro("gameboy")
