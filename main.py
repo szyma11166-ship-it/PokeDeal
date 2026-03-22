@@ -1,292 +1,210 @@
 import requests
 from bs4 import BeautifulSoup
-import time
-import os
 import re
-
-TOKEN = os.environ.get("TOKEN")
-CHAT_ID = "-1003743099672"
-
-seen_links = set()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
 # =========================
-# BLACKLIST
+# 🔧 CLEAN
 # =========================
-blacklist = [
-    "etui","case","pokrowiec","naklejka","folia",
-    "szkło","uszkodz","części","na części",
-    "pudełko","box empty",
-    "gratis","oddam","rezerwacja",
-    "tazo","nakretki","mirinda",
-    "bulk","losowe karty","mix kart",
-    "japoń","korea","chiń","niemieck","franc",
+def clean(text):
+    return re.sub(r"\s+", " ", text).strip().lower()
 
-    # 🔥 gry które spamują OLX
-    "yoshi","donkey","mario","fifa","zelda"
-]
 
 # =========================
-# SEND
+# 💰 CENA (FINAL FIX)
 # =========================
-def send(title, price, link, tag, source):
-    msg = f"{tag} | {source}\n\n"
-    msg += f"📦 {title[:80]}\n"
-    msg += f"💰 {price} zł\n\n"
-    msg += f"🔗 {link}"
+def get_price(text):
+    text = text.lower()
 
-    print("📤", msg)
+    # usuń rzeczy które psują parsing
+    text = re.sub(r"\d+\s*gb", "", text)
+    text = re.sub(r"\d+%", "", text)
 
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
+    # szukaj tylko zł
+    matches = re.findall(r"(\d{1,5}(?:[\.,]\d{1,2})?)\s*zł", text)
 
-# =========================
-# PRICE FIX (PLN ONLY)
-# =========================
-def extract_price(text):
-    text = text.replace(",", ".")
-    numbers = re.findall(r"\d+\.\d+|\d+", text)
+    if not matches:
+        return None
 
-    for n in numbers:
-        val = float(n)
+    # bierz NAJNIŻSZĄ sensowną (chroni przed scam listingami)
+    prices = [float(m.replace(",", ".")) for m in matches]
 
-        if val < 10:
-            continue
+    return min(prices)
 
-        # ❌ ignoruj GB pamięci
-        if val in [16,32,64,128,256,512]:
-            continue
-
-        return val
-
-    return None
 
 # =========================
-# FILTERS
+# 🚫 FILTRY
 # =========================
-def is_new(link):
-    if link in seen_links:
-        return False
-    seen_links.add(link)
-    return True
+def is_valid(title):
+    t = clean(title)
 
-def is_blacklisted(name):
-    name = name.lower()
-    return any(b in name for b in blacklist)
+    banned = [
+        "uszkodz", "części", "na części", "obudow",
+        "za sztuk", "każda", "1 szt", "pojedyncz",
+        "etui", "ładowark", "kabel", "adapter",
+        "bez gry", "brak gry", "nie działa",
+        "do naprawy", "pobierać gry", "przerobion",
+        "konto", "psn", "steam"
+    ]
 
-def is_pokemon(name):
-    return "pokemon" in name or "pokémon" in name
+    return not any(b in t for b in banned)
 
-# =========================
-# 🔥 KONSOLE FILTER (FINAL FIX)
-# =========================
-def is_real_console(name):
-    name = name.lower()
-
-    # ❌ akcesoria
-    if any(x in name for x in [
-        "ładowarka","kabel","adapter","etui","case"
-    ]):
-        return False
-
-    # ❌ pojedyncze gry (mocny filtr)
-    if any(x in name for x in [
-        "psp","3ds","dsi","gameboy"
-    ]):
-        if any(x in name for x in [
-            "pokemon","mario","donkey","zelda",
-            "yoshi","fifa","gta","call of duty",
-            "need for speed"
-        ]):
-            if not any(x in name for x in [
-                "zestaw","pakiet","kolekcja","bundle",
-                "10 gier","5 gier","kilka gier"
-            ]):
-                return False
-
-    return True
 
 # =========================
-# LEVEL SYSTEM
+# 🎯 ZESTAWY (WAŻNE)
 # =========================
-def pokemon_level(name, price):
-    name = name.lower()
+def is_bundle(title):
+    t = clean(title)
 
-    if "elite trainer box" in name and price < 280:
-        return "🟣 MEGA DEAL"
-    if "booster box" in name and price < 600:
-        return "🟣 MEGA DEAL"
-    if "booster" in name and price < 20:
-        return "🟣 DEAL"
-    if "premium" in name and price < 500:
-        return "🟣 DEAL"
+    bundle_words = [
+        "zestaw", "komplet", "kolekcja",
+        "pakiet", "lot", "bundle",
+        "gier", "games", "x", "+"
+    ]
 
-    return None
+    return any(w in t for w in bundle_words)
 
-def console_level(name, price):
-    name = name.lower()
-
-    if "psp" in name and price < 220:
-        return "🎮 FLIP"
-    if "3ds" in name and price < 300:
-        return "🎮 FLIP"
-    if "dsi" in name and price < 150:
-        return "🎮 FLIP"
-    if "gameboy" in name and price < 250:
-        return "🎮 FLIP"
-
-    # 🔥 zestawy gier
-    if any(x in name for x in ["zestaw","kolekcja","pakiet"]):
-        if price < 200:
-            return "🔥 GAME LOT"
-
-    return None
 
 # =========================
-# OLX
+# 📤 OUTPUT
 # =========================
-def check_olx(query, tag):
-    print(f"\n🟢 OLX {tag}...")
+def send(title, price, link, source):
+    print(f"📤 {source} | {title[:70]} | {price} zł")
+    print(link)
+    print("")
+
+
+# =========================
+# 🟢 OLX
+# =========================
+def olx_search(query, label):
+    print(f"\n🟢 OLX {label}...")
 
     url = f"https://www.olx.pl/oferty/q-{query}/"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.find_all("div", {"data-cy": "l-card"})
-    print("📦 ZNALEZIONO:", len(items))
+    items = soup.select("div[data-cy='l-card']")
+
+    print(f"📦 {len(items)}")
 
     for item in items:
         try:
-            a = item.find("a")
-            if not a:
-                continue
+            title = item.select_one("h6").text
+            link = item.select_one("a")["href"]
 
-            link = a["href"]
-            text = item.get_text().lower()
+            price = get_price(item.get_text())
 
-            if not link.startswith("http"):
-                link = "https://www.olx.pl" + link
-
-            if not is_new(link):
-                continue
-
-            if is_blacklisted(text):
-                continue
-
-            price = extract_price(text)
             if not price:
                 continue
 
-            # 🎮 KONSOLE
-            if tag != "POKEMON":
-                if not is_real_console(text):
-                    continue
+            if not is_valid(title):
+                continue
 
-                level = console_level(text, price)
-                if level:
-                    send(text, price, link, level, f"OLX {tag}")
+            # 🔥 tylko sensowne flippy
+            if not is_bundle(title) and price < 50:
+                continue
 
-            # 🟣 POKEMON
-            else:
-                level = pokemon_level(text, price)
-                if level:
-                    send(text, price, link, level, "OLX POKEMON")
+            print(f"✅ {title[:60]}")
+            send(title, price, link, f"OLX {label}")
 
         except:
             continue
 
+
 # =========================
-# VINTED
+# 🟣 VINTED
 # =========================
-def check_vinted():
+def vinted_search(query):
     print("\n🟣 VINTED...")
 
-    url = "https://www.vinted.pl/catalog?search_text=pokemon"
+    url = f"https://www.vinted.pl/catalog?search_text={query}"
     r = requests.get(url, headers=HEADERS)
+
     soup = BeautifulSoup(r.text, "html.parser")
+    items = soup.select("div.feed-grid__item")
 
-    items = soup.find_all("a", href=True)
-    print("📦", len(items))
+    print(f"📦 {len(items)}")
 
-    for item in items[:80]:
+    for item in items:
         try:
-            text = item.get_text().lower()
-            link = "https://www.vinted.pl" + item["href"]
+            text = item.get_text()
+            price = get_price(text)
 
-            if not is_new(link):
-                continue
-
-            if is_blacklisted(text):
-                continue
-
-            price = extract_price(text)
             if not price:
                 continue
 
-            level = pokemon_level(text, price)
-            if level:
-                send(text, price, link, level, "VINTED")
+            if not is_valid(text):
+                continue
+
+            if not is_bundle(text) and price < 50:
+                continue
+
+            print(f"📤 VINTED | {text[:60]} | {price} zł")
 
         except:
             continue
 
+
 # =========================
-# ALLEGRO LOKALNIE
+# 🟠 ALLEGRO LOKALNIE
 # =========================
-def check_allegro_local():
+def allegro_local(query):
     print("\n🟠 ALLEGRO LOKALNIE...")
 
-    url = "https://allegrolokalnie.pl/oferty/q/pokemon"
+    url = f"https://allegrolokalnie.pl/oferty/q/{query}"
     r = requests.get(url, headers=HEADERS)
+
     soup = BeautifulSoup(r.text, "html.parser")
+    items = soup.select("article")
 
-    items = soup.find_all("a", href=True)
-    print("📦", len(items))
+    print(f"📦 {len(items)}")
 
-    for item in items[:100]:
+    for item in items:
         try:
-            text = item.get_text().lower()
-            link = item["href"]
+            title = item.get_text()
+            price = get_price(title)
 
-            if not link.startswith("http"):
-                link = "https://allegrolokalnie.pl" + link
-
-            if not is_new(link):
-                continue
-
-            if is_blacklisted(text):
-                continue
-
-            price = extract_price(text)
             if not price:
                 continue
 
-            level = pokemon_level(text, price)
-            if level:
-                send(text, price, link, level, "ALLEGRO")
+            if not is_valid(title):
+                continue
+
+            if not is_bundle(title) and price < 50:
+                continue
+
+            print(f"📤 ALLEGRO | {title[:60]} | {price} zł")
 
         except:
             continue
 
+
 # =========================
-# START
+# 🚀 START
 # =========================
 print("🚀 FINAL SNIPER BOT")
-send("BOT START", 0, "", "🚀 BOT", "SYSTEM")
+print("📤 BOT START | 0")
 
-while True:
-    check_olx("pokemon", "POKEMON")
-    check_olx("psp", "PSP")
-    check_olx("nintendo-3ds", "3DS")
-    check_olx("gameboy", "GAMEBOY")
+# 🎯 POKEMON
+olx_search("pokemon", "POKEMON")
 
-    check_vinted()
-    check_allegro_local()
+# 🎮 KONSOLE
+olx_search("psp", "PSP")
+olx_search("nintendo 3ds", "3DS")
+olx_search("gameboy", "GAMEBOY")
 
-    time.sleep(60)
+# 🟣 VINTED
+vinted_search("pokemon")
+vinted_search("psp")
+vinted_search("nintendo 3ds")
+vinted_search("gameboy")
+
+# 🟠 ALLEGRO
+allegro_local("pokemon")
+allegro_local("psp")
+allegro_local("nintendo 3ds")
+allegro_local("gameboy")
