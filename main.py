@@ -229,7 +229,7 @@ def check_allegro_local():
     print("\n🟠 ALLEGRO LOKALNIE...")
     url = "https://allegrolokalnie.pl/oferty/q/pokemon/rss"
     r = requests.get(url)
-    soup = BeautifulSoup(r.text, "xml")
+    soup = BeautifulSoup(r.text, "html.parser")
 
     for item in soup.find_all("item"):
         try:
