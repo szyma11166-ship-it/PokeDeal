@@ -1,5 +1,7 @@
 import requests
+from bs4 import BeautifulSoup
 import time
+import re
 
 # ========================
 # ⚙️ KONFIG
@@ -8,14 +10,16 @@ import time
 TOKEN = "TWÓJ_TOKEN"
 CHAT_ID = "TWÓJ_CHAT_ID"
 
-MAX_PRICE = 150  # 🔥 LIMIT CENY
+MAX_PRICE = 150
+
+seen_links = set()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
 # ========================
-# 🧠 FILTRY (TYLKO KONKRET)
+# ❌ BLACKLIST
 # ========================
 
 BAD_KEYWORDS = [
@@ -25,37 +29,52 @@ BAD_KEYWORDS = [
     "common", "uncommon", "energy",
     "fake", "replika",
     "uszkodz", "na części", "części",
-    "etui", "ładowarka", "kabel"
+    "etui", "ładowarka", "kabel",
+    "zamienię", "za darmo"
 ]
 
 def is_trash(title):
     t = title.lower()
     return any(b in t for b in BAD_KEYWORDS)
 
-def should_send(item):
-    title = item["title"]
-    price = item["price"]
+# ========================
+# 💸 PRICE
+# ========================
 
-    # 🔥 twardy limit
-    if price > MAX_PRICE:
+def extract_price(text):
+    try:
+        text = text.replace(",", ".")
+        prices = re.findall(r"\d+\.\d+|\d+", text)
+
+        for p in prices:
+            val = float(p)
+            if 5 < val < 10000:
+                return val
+    except:
+        return None
+
+    return None
+
+# ========================
+# 🆕 NEW FILTER
+# ========================
+
+def is_new(link):
+    if link in seen_links:
         return False
-
-    # 🔥 wywal śmieci
-    if is_trash(title):
-        return False
-
+    seen_links.add(link)
     return True
 
 # ========================
 # 📤 TELEGRAM
 # ========================
 
-def send_telegram(text):
+def send(msg):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         requests.post(url, data={
             "chat_id": CHAT_ID,
-            "text": text
+            "text": msg
         }, timeout=10)
     except Exception as e:
         print("❌ Telegram error:", e)
@@ -64,125 +83,89 @@ def send_telegram(text):
 # 🧾 FORMAT
 # ========================
 
-def format_msg(item, source):
+def format_msg(title, price, link):
     return f"""🔥 OKAZJA
 
-📦 {item['title']}
+📦 {title[:100]}
 
-💰 {item['price']} zł
+💰 {price} zł
 
-🔗 {item['url']}
-📍 {source}
+🔗 {link}
 """
 
 # ========================
-# 🟢 OLX
+# 🟢 OLX (HTML – DZIAŁA)
 # ========================
 
-def fetch_olx(query):
+def check_olx(query):
+    print(f"🟢 OLX {query}...")
+
+    url = f"https://www.olx.pl/oferty/q-{query}/"
+
     try:
-        url = f"https://www.olx.pl/api/v1/offers/?query={query}"
-        res = requests.get(url, headers=HEADERS, timeout=10)
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        try:
-            data = res.json()
-        except:
-            return []
+        items = soup.select("div[data-cy='l-card']")
+        print(f"📦 ZNALEZIONO: {len(items)}")
 
-        items = []
+        sent = 0
 
-        for ad in data.get("data", []):
+        for item in items:
             try:
-                items.append({
-                    "title": ad["title"],
-                    "price": float(ad["price"]["value"]),
-                    "url": ad["url"]
-                })
+                text = item.get_text(" ").lower()
+                a_tag = item.find("a")
+
+                if not a_tag:
+                    continue
+
+                link = a_tag["href"]
+
+                if not link.startswith("http"):
+                    link = "https://www.olx.pl" + link
+
+                if not is_new(link):
+                    continue
+
+                if is_trash(text):
+                    continue
+
+                price = extract_price(text)
+                if not price:
+                    continue
+
+                if price > MAX_PRICE:
+                    continue
+
+                msg = format_msg(text, price, link)
+                send(msg)
+
+                sent += 1
+
             except:
                 continue
 
-        return items
+        print(f"📤 WYSŁANO: {sent}")
 
     except Exception as e:
         print("❌ OLX error:", e)
-        return []
-
-# ========================
-# 🟣 VINTED
-# ========================
-
-def fetch_vinted():
-    try:
-        url = "https://www.vinted.pl/api/v2/catalog/items"
-        res = requests.get(url, headers=HEADERS, timeout=10)
-
-        try:
-            data = res.json()
-        except:
-            return []
-
-        items = []
-
-        for ad in data.get("items", []):
-            try:
-                items.append({
-                    "title": ad["title"],
-                    "price": float(ad["price"]),
-                    "url": ad["url"]
-                })
-            except:
-                continue
-
-        return items
-
-    except Exception as e:
-        print("❌ Vinted error:", e)
-        return []
-
-# ========================
-# 🔁 LOOP
-# ========================
-
-def run_bot():
-    print("🚀 FINAL SNIPER BOT v3.2 START")
-    send_telegram("🚀 BOT START")
-
-    while True:
-        try:
-            all_items = []
-
-            print("🟢 OLX...")
-            for q in ["psp", "gameboy", "3ds", "pokemon"]:
-                all_items += [(i, "OLX") for i in fetch_olx(q)]
-
-            print("🟣 VINTED...")
-            all_items += [(i, "VINTED") for i in fetch_vinted()]
-
-            print(f"📦 TOTAL: {len(all_items)}")
-
-            sent = 0
-
-            for item, source in all_items:
-                print(f"👉 {item['title']} | {item['price']}")
-
-                if should_send(item):
-                    print("✅ WYSYŁAM")
-                    send_telegram(format_msg(item, source))
-                    sent += 1
-                else:
-                    print("❌ ODRZUCONE")
-
-            print(f"📤 WYSŁANO: {sent}")
-
-            time.sleep(60)
-
-        except Exception as e:
-            print("❌ LOOP ERROR:", e)
-            time.sleep(10)
 
 # ========================
 # ▶️ START
 # ========================
 
-if __name__ == "__main__":
-    run_bot()
+print("🚀 FINAL STABLE BOT START")
+send("🚀 BOT START")
+
+while True:
+    check_olx("pokemon")
+    time.sleep(15)
+
+    check_olx("psp")
+    time.sleep(15)
+
+    check_olx("gameboy")
+    time.sleep(15)
+
+    check_olx("3ds")
+    time.sleep(30)
