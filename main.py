@@ -14,13 +14,14 @@ HEADERS = {
 }
 
 # =========================
-# BLACKLIST (OSTRZEJSZY)
+# BLACKLIST (MOCNA)
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
     "funko", "maskotka", "bulk", "mix",
     "pojedyncza", "single", "karta", "karty",
     "promo", "gx", "v", "ex", "vmax", "vstar",
+    "ładowarka", "zasilacz", "kabel",
     "uszkodz", "na części", "części",
     "gra", "gry", "cd", "dvd"
 ]
@@ -34,15 +35,14 @@ bad_languages = [
 # SEND
 # =========================
 def send(title, price, link, tag, shop):
-    msg = f"""
-{tag} • {shop}
+    msg = f"""{tag} • {shop}
 
 📦 {title}
 
 💸 {price} zł
 
-🔗 {link}
-"""
+🔗 {link}"""
+
     print("📤", shop, "|", title[:60], "|", price)
 
     requests.post(
@@ -59,14 +59,23 @@ def is_new(link):
     seen_links.add(link)
     return True
 
+# 🔥 FIX NA GB / zł
 def extract_price(text):
-    text = text.replace(",", ".")
+    text = text.lower().replace(",", ".")
+
+    # 🎯 najpierw szukaj ceny przed zł
+    match = re.search(r"(\d+[.,]?\d*)\s*zł", text)
+    if match:
+        return float(match.group(1))
+
+    # fallback
     prices = re.findall(r"\d+\.\d+|\d+", text)
 
     for p in prices:
         val = float(p)
-        if val > 20:
+        if 20 < val < 10000:
             return val
+
     return None
 
 def is_bad(name):
@@ -83,8 +92,7 @@ def is_real_pokemon(name):
     return any(k in name for k in [
         "booster", "etb", "elite trainer box",
         "booster bundle", "ultra premium",
-        "collection", "box", "tin",
-        "set"
+        "collection", "box", "tin", "set"
     ])
 
 def pokemon_level(name, price):
@@ -136,7 +144,7 @@ def console_level(name, price):
     return None
 
 # =========================
-# OLX SEARCH (2 SOURCES)
+# OLX SEARCH
 # =========================
 def scan_olx(url, label):
     print(f"\n🟢 OLX {label}...")
@@ -145,7 +153,7 @@ def scan_olx(url, label):
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.find_all("div", {"data-cy": "l-card"})
-    print("📦", len(items))
+    print("📦 ZNALEZIONO:", len(items))
 
     for item in items:
         try:
@@ -183,7 +191,7 @@ def scan_olx(url, label):
 # =========================
 # START
 # =========================
-print("🚀 FINAL PRO BOT")
+print("🚀 FINAL ULTRA BOT")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
