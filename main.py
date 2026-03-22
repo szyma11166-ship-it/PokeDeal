@@ -18,9 +18,10 @@ HEADERS = {
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
-    "funko", "lego", "maskotka",
-    "bulk", "mix", "losowe",
+    "funko", "maskotka", "bulk", "mix",
     "pojedyncza", "single", "karta", "karty",
+    "uszkodz", "na części", "części",
+    "gra", "gry", "cd", "dvd"
 ]
 
 bad_languages = [
@@ -37,14 +38,16 @@ def send(title, price, link, tag, shop):
 
 📦 {title}
 
-💸 {price if price else 'brak'} zł
+💸 {price} zł
 
 🔗 {link}
 """
-    print("📤", shop, "|", title[:60])
+    print("📤", shop, "|", title[:60], "|", price)
 
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+    requests.post(
+        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        data={"chat_id": CHAT_ID, "text": msg}
+    )
 
 # =========================
 # HELPERS
@@ -63,40 +66,52 @@ def extract_price(text):
         val = float(p)
         if val > 20:
             return val
-
     return None
 
 def is_bad(name):
     name = name.lower()
     return any(w in name for w in blacklist) or any(l in name for l in bad_languages)
 
-def is_real(name):
-    name = name.lower()
+# =========================
+# POKEMON
+# =========================
+def is_pokemon(name):
+    return "pokemon" in name or "pokémon" in name
+
+def is_real_pokemon(name):
     return any(k in name for k in [
-        "booster",
-        "elite trainer box",
-        "etb",
-        "booster bundle",
-        "ultra premium",
-        "collection"
+        "booster", "etb", "elite trainer box",
+        "booster bundle", "ultra premium", "collection"
     ])
 
-# =========================
-# LEVELS
-# =========================
-def get_level(name, price):
-    name = name.lower()
+def pokemon_level(name, price):
+    if "elite trainer box" in name and price < 250:
+        return "🔥🔥🔥 ETB"
+    if "booster bundle" in name and price < 100:
+        return "🔥🔥 BUNDLE"
+    if "booster" in name and "box" not in name and price < 20:
+        return "🔥 BOOSTER"
+    if "ultra premium" in name and price < 500:
+        return "🔥🔥🔥 PREMIUM"
+    return None
 
-    if price:
-        if "elite trainer box" in name and price < 280:
-            return "🔥🔥🔥 ETB FLIP"
-        if "booster bundle" in name and price < 110:
-            return "🔥🔥 BUNDLE"
-        if "booster" in name and "box" not in name and price < 22:
-            return "🔥 BOOSTER"
-        if "ultra premium" in name and price < 550:
-            return "🔥🔥🔥 PREMIUM"
+# =========================
+# KONSOLE
+# =========================
+def is_console(name):
+    return any(k in name for k in [
+        "psp", "3ds", "dsi", "gameboy", "gba"
+    ])
 
+def console_level(name, price):
+    if "psp" in name and price < 200:
+        return "🎮 PSP FLIP"
+    if "3ds" in name and price < 300:
+        return "🎮 3DS FLIP"
+    if "dsi" in name and price < 150:
+        return "🎮 DSI FLIP"
+    if ("gameboy" in name or "gba" in name) and price < 250:
+        return "🎮 GAMEBOY FLIP"
     return None
 
 # =========================
@@ -104,7 +119,6 @@ def get_level(name, price):
 # =========================
 def check_olx():
     print("\n🟢 OLX...")
-
     url = "https://www.olx.pl/oferty/q-pokemon/"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
@@ -117,17 +131,19 @@ def check_olx():
             if not link.startswith("http"):
                 link = "https://www.olx.pl" + link
 
-            if not is_new(link):
-                continue
-
-            if is_bad(text):
-                continue
-
-            if not is_real(text):
+            if not is_new(link) or is_bad(text):
                 continue
 
             price = extract_price(text)
-            tag = get_level(text, price)
+            if not price:
+                continue
+
+            if is_pokemon(text) and is_real_pokemon(text):
+                tag = pokemon_level(text, price)
+            elif is_console(text):
+                tag = console_level(text, price)
+            else:
+                continue
 
             if tag:
                 send(text[:80], price, link, tag, "OLX")
@@ -140,7 +156,6 @@ def check_olx():
 # =========================
 def check_vinted():
     print("\n🟣 VINTED...")
-
     url = "https://www.vinted.pl/catalog?search_text=pokemon"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
@@ -148,25 +163,24 @@ def check_vinted():
     for a in soup.find_all("a", href=True):
         try:
             text = a.get_text().lower()
-
-            if "pokemon" not in text:
-                continue
-
             link = a["href"]
+
             if not link.startswith("http"):
                 link = "https://www.vinted.pl" + link
 
-            if not is_new(link):
-                continue
-
-            if is_bad(text):
-                continue
-
-            if not is_real(text):
+            if not is_new(link) or is_bad(text):
                 continue
 
             price = extract_price(text)
-            tag = get_level(text, price)
+            if not price:
+                continue
+
+            if is_pokemon(text) and is_real_pokemon(text):
+                tag = pokemon_level(text, price)
+            elif is_console(text):
+                tag = console_level(text, price)
+            else:
+                continue
 
             if tag:
                 send(text[:80], price, link, tag, "Vinted")
@@ -179,7 +193,6 @@ def check_vinted():
 # =========================
 def check_amazon():
     print("\n🟡 AMAZON...")
-
     url = "https://www.amazon.pl/s?k=pokemon+tcg+booster"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
@@ -189,17 +202,19 @@ def check_amazon():
             text = item.get_text().lower()
             link = "https://amazon.pl" + item.find("a")["href"]
 
-            if not is_new(link):
-                continue
-
-            if is_bad(text):
-                continue
-
-            if not is_real(text):
+            if not is_new(link) or is_bad(text):
                 continue
 
             price = extract_price(text)
-            tag = get_level(text, price)
+            if not price:
+                continue
+
+            if is_pokemon(text) and is_real_pokemon(text):
+                tag = pokemon_level(text, price)
+            elif is_console(text):
+                tag = console_level(text, price)
+            else:
+                continue
 
             if tag:
                 send(text[:80], price, link, tag, "Amazon")
@@ -208,54 +223,35 @@ def check_amazon():
             continue
 
 # =========================
-# SKLEPY
+# ALLEGRO LOKALNIE (RSS)
 # =========================
-shops = {
-    "Rebel": "https://www.rebel.pl",
-    "LootQuest": "https://lootquest.pl",
-    "Strefa Kart": "https://strefakart.pl",
-    "Strefa TCG": "https://strefa-tcg.pl",
-    "Kanto Drop": "https://kantodrop.pl",
-    "Świat Kart": "https://swiatkart.com.pl",
-    "Skład Gier": "https://skladgier.pl"
-}
+def check_allegro_local():
+    print("\n🟠 ALLEGRO LOKALNIE...")
+    url = "https://allegrolokalnie.pl/oferty/q/pokemon/rss"
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, "xml")
 
-def check_shops():
-    print("\n🏪 SKLEPY...")
-
-    for name, url in shops.items():
+    for item in soup.find_all("item"):
         try:
-            r = requests.get(url, headers=HEADERS)
-            soup = BeautifulSoup(r.text, "html.parser")
+            title = item.title.text.lower()
+            link = item.link.text
 
-            for a in soup.find_all("a", href=True):
-                text = a.get_text().lower()
+            if not is_new(link) or is_bad(title):
+                continue
 
-                if "pokemon" not in text:
-                    continue
+            price = extract_price(title)
+            if not price:
+                continue
 
-                link = a["href"]
-                if not link.startswith("http"):
-                    link = url + link
+            if is_pokemon(title) and is_real_pokemon(title):
+                tag = pokemon_level(title, price)
+            elif is_console(title):
+                tag = console_level(title, price)
+            else:
+                continue
 
-                # pomijamy kategorie
-                if "product" not in link and "produkt" not in link:
-                    continue
-
-                if not is_new(link):
-                    continue
-
-                if is_bad(text):
-                    continue
-
-                if not is_real(text):
-                    continue
-
-                price = extract_price(text)
-                tag = get_level(text, price)
-
-                if tag:
-                    send(text[:80], price, link, tag, name)
+            if tag:
+                send(title[:80], price, link, tag, "Allegro Lokalnie")
 
         except:
             continue
@@ -263,7 +259,7 @@ def check_shops():
 # =========================
 # START
 # =========================
-print("🚀 FULL BOT (ALL SOURCES)")
+print("🚀 ULTRA FLIP BOT")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
@@ -276,5 +272,5 @@ while True:
     check_amazon()
     time.sleep(25)
 
-    check_shops()
-    time.sleep(40)
+    check_allegro_local()
+    time.sleep(30)
