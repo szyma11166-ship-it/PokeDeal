@@ -5,19 +5,24 @@ import time
 # ⚙️ KONFIG
 # ========================
 
-TOKEN = "TWÓJ_TOKEN_TELEGRAM"
+TOKEN = "TWÓJ_TOKEN"
 CHAT_ID = "TWÓJ_CHAT_ID"
 
-MAX_PRICE = 150  # 🔥 TWÓJ LIMIT
+MAX_PRICE = 150  # 🔥 LIMIT
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
+}
 
 # ========================
 # 🧠 FILTRY
 # ========================
 
 BAD_KEYWORDS = [
-    "korea", "korean", "jp", "japan", "chiń",
+    "korea", "korean", "jp", "japan",
     "bulk", "mix", "losowe", "random",
-    "100 kart", "200 kart", "500 kart", "1000 kart",
+    "100 kart", "200 kart", "500 kart",
     "common", "uncommon", "energy",
     "fake", "replika"
 ]
@@ -25,7 +30,7 @@ BAD_KEYWORDS = [
 GOOD_KEYWORDS = [
     "zestaw", "kolekcja", "pakiet", "lot",
     "psp", "gameboy", "3ds",
-    "pokemon", "etb", "elite trainer"
+    "pokemon", "etb"
 ]
 
 def is_price_ok(price):
@@ -33,7 +38,7 @@ def is_price_ok(price):
 
 def is_trash(title):
     t = title.lower()
-    return any(bad in t for bad in BAD_KEYWORDS)
+    return any(b in t for b in BAD_KEYWORDS)
 
 def is_good(title):
     t = title.lower()
@@ -71,16 +76,19 @@ def should_send(item):
 # ========================
 
 def send_telegram(text):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "disable_web_page_preview": False
-    }
-    requests.post(url, data=data)
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        data = {
+            "chat_id": CHAT_ID,
+            "text": text,
+            "disable_web_page_preview": False
+        }
+        requests.post(url, data=data, timeout=10)
+    except Exception as e:
+        print("❌ Telegram error:", e)
 
 # ========================
-# 🧾 FORMAT WIADOMOŚCI
+# 🧾 FORMAT
 # ========================
 
 def format_msg(item, source):
@@ -104,77 +112,120 @@ def format_msg(item, source):
 """
 
 # ========================
-# 🟢 OLX SCRAPER
+# 🛡 SAFE JSON
+# ========================
+
+def safe_json(res):
+    try:
+        return res.json()
+    except:
+        return None
+
+# ========================
+# 🟢 OLX
 # ========================
 
 def fetch_olx(query):
-    url = f"https://www.olx.pl/api/v1/offers/?query={query}"
-    res = requests.get(url).json()
+    try:
+        url = f"https://www.olx.pl/api/v1/offers/?query={query}"
+        res = requests.get(url, headers=HEADERS, timeout=10)
 
-    items = []
+        data = safe_json(res)
+        if not data:
+            return []
 
-    for ad in res.get("data", []):
-        try:
-            items.append({
-                "title": ad["title"],
-                "price": float(ad["price"]["value"]),
-                "url": ad["url"]
-            })
-        except:
-            continue
+        items = []
 
-    return items
+        for ad in data.get("data", []):
+            try:
+                items.append({
+                    "title": ad["title"],
+                    "price": float(ad["price"]["value"]),
+                    "url": ad["url"]
+                })
+            except:
+                continue
+
+        return items
+
+    except Exception as e:
+        print("❌ OLX error:", e)
+        return []
 
 # ========================
-# 🟠 ALLEGRO LOKALNIE
+# 🟠 ALLEGRO (NAPRAWIONE)
 # ========================
 
 def fetch_allegro():
     url = "https://allegrolokalnie.pl/api/offers"
-    res = requests.get(url).json()
 
-    items = []
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=10)
 
-    for ad in res.get("items", []):
-        try:
-            items.append({
-                "title": ad["name"],
-                "price": float(ad["sellingMode"]["price"]["amount"]),
-                "url": ad["url"]
-            })
-        except:
-            continue
+        if res.status_code != 200:
+            print("❌ Allegro status:", res.status_code)
+            return []
 
-    return items
+        data = safe_json(res)
+        if not data:
+            print("❌ Allegro blokuje (brak JSON)")
+            return []
+
+        items = []
+
+        for ad in data.get("items", []):
+            try:
+                items.append({
+                    "title": ad["name"],
+                    "price": float(ad["sellingMode"]["price"]["amount"]),
+                    "url": ad.get("url", "brak linku")
+                })
+            except:
+                continue
+
+        return items
+
+    except Exception as e:
+        print("❌ Allegro error:", e)
+        return []
 
 # ========================
-# 🟣 VINTED (PROSTE)
+# 🟣 VINTED
 # ========================
 
 def fetch_vinted():
-    url = "https://www.vinted.pl/api/v2/catalog/items"
-    res = requests.get(url).json()
+    try:
+        url = "https://www.vinted.pl/api/v2/catalog/items"
+        res = requests.get(url, headers=HEADERS, timeout=10)
 
-    items = []
+        data = safe_json(res)
+        if not data:
+            return []
 
-    for ad in res.get("items", []):
-        try:
-            items.append({
-                "title": ad["title"],
-                "price": float(ad["price"]),
-                "url": ad["url"]
-            })
-        except:
-            continue
+        items = []
 
-    return items
+        for ad in data.get("items", []):
+            try:
+                items.append({
+                    "title": ad["title"],
+                    "price": float(ad["price"]),
+                    "url": ad["url"]
+                })
+            except:
+                continue
+
+        return items
+
+    except Exception as e:
+        print("❌ Vinted error:", e)
+        return []
 
 # ========================
-# 🔁 BOT LOOP
+# 🔁 LOOP
 # ========================
 
 def run_bot():
-    print("🚀 FINAL SNIPER BOT v3 START")
+    print("🚀 FINAL SNIPER BOT v3.1 START")
 
     while True:
         try:
@@ -182,19 +233,23 @@ def run_bot():
 
             # OLX
             print("🟢 OLX...")
-            all_items += [(i, "OLX") for i in fetch_olx("psp")]
-            all_items += [(i, "OLX") for i in fetch_olx("gameboy")]
-            all_items += [(i, "OLX") for i in fetch_olx("3ds")]
-            all_items += [(i, "OLX") for i in fetch_olx("pokemon")]
+            for q in ["psp", "gameboy", "3ds", "pokemon"]:
+                items = fetch_olx(q)
+                all_items += [(i, "OLX") for i in items]
 
             # ALLEGRO
             print("🟠 ALLEGRO...")
-            all_items += [(i, "ALLEGRO") for i in fetch_allegro()]
+            allegro_items = fetch_allegro()
+            if allegro_items:
+                all_items += [(i, "ALLEGRO") for i in allegro_items]
 
             # VINTED
             print("🟣 VINTED...")
-            all_items += [(i, "VINTED") for i in fetch_vinted()]
+            vinted_items = fetch_vinted()
+            if vinted_items:
+                all_items += [(i, "VINTED") for i in vinted_items]
 
+            # FILTER + SEND
             for item, source in all_items:
                 if should_send(item):
                     msg = format_msg(item, source)
@@ -203,7 +258,7 @@ def run_bot():
             time.sleep(60)
 
         except Exception as e:
-            print("❌ ERROR:", e)
+            print("❌ LOOP ERROR:", e)
             time.sleep(10)
 
 # ========================
