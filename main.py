@@ -1,44 +1,26 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-import os
-
-# =========================
-# 🔐 TELEGRAM
-# =========================
-TOKEN = os.getenv("TOKEN")
-CHAT_ID = "-1003743099672"  # 🔥 NA STAŁE
-
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
-
+import time
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# =========================
-# ⚙️ LIMITY
-# =========================
-MAX_SEND = 6
-sent_count = 0
+BOT_TOKEN = "TU_MASZ_SWÓJ_TOKEN"
+CHAT_ID = "-1003743099672"
 
-MAX_PRICE_CONSOLE = 400
-
+sent_links = set()
 
 # =========================
-# CLEAN
+# 🔧 CLEAN
 # =========================
 def clean(text):
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
 # =========================
-# PRICE
+# 💰 CENA
 # =========================
 def get_price(text):
     text = text.lower()
@@ -56,106 +38,60 @@ def get_price(text):
 
 
 # =========================
-# OGÓLNE FILTRY
+# 🚫 FILTRY ŚMIECI
 # =========================
-def is_valid(title):
-    t = clean(title)
+def is_valid(text):
+    t = clean(text)
 
     banned = [
-        "uszkodz", "części", "na części",
-        "obudow", "za sztuk", "każda",
-        "1 szt", "pojedyncz", "etui",
-        "ładowark", "kabel", "adapter",
-        "bez gry", "brak gry",
-        "nie działa", "do naprawy",
-        "konto", "psn", "steam"
+        "bulk", "losowa", "random", "1 karta", "pojedyncza",
+        "proxy", "fake", "drukowana",
+        "japanese", "korean", "korea", "jp", "kr",
+        "deutsch", "german", "francais", "italiano"
     ]
 
     return not any(b in t for b in banned)
 
 
 # =========================
-# 🔥 POKEMON FILTER
+# 🎯 LOGIKA PRODUKTU
 # =========================
-def is_good_pokemon(title):
+def is_target(title, price):
     t = clean(title)
 
-    bad = [
-        "bulk", "losowe", "random", "mix",
-        "common", "uncommon",
-        "pojedyncza", "single", "1 karta",
-        "proxy", "fake",
+    if "elite trainer box" in t and price <= 300:
+        return "ETB"
 
-        "korea", "korean",
-        "japan", "japanese",
-        "deutsch", "german", "de ",
-        "franc", "french", "fr ",
-        "ital", "italian", "it "
-    ]
+    if "booster" in t and price <= 20:
+        return "BOOSTER"
 
-    if any(b in t for b in bad):
-        return False
-
-    good = [
-        "elite trainer box",
-        "etb",
-        "booster",
-        "bundle",
-        "illustration",
-        "first partner",
-        "pokemon day 2026"
-    ]
-
-    return any(g in t for g in good)
-
-
-# =========================
-# 💰 LIMITY POKEMON
-# =========================
-def get_pokemon_limit(title):
-    t = clean(title)
-
-    if "first partner" in t:
-        return 150
-
-    if "pokemon day 2026" in t:
-        return 70
-
-    if "booster" in t:
-        return 25
-
-    if "elite trainer box" in t or "etb" in t:
-        return 300
-
-    if "bundle" in t:
-        return 200
+    if "bundle" in t and price <= 200:
+        return "BUNDLE"
 
     if "illustration" in t:
-        return 150
+        return "ILLUSTRATION"
 
-    return 120
+    if "first partner" in t and price <= 150:
+        return "FIRST PARTNER"
+
+    if "pokemon day" in t and "2026" in t and price <= 70:
+        return "POKEMON DAY"
+
+    return None
 
 
 # =========================
-# 📤 SEND
+# 📤 TELEGRAM
 # =========================
-def send(title, price, link, source, is_pokemon=False):
-    global sent_count
-
-    if sent_count >= MAX_SEND:
+def send(title, price, link, tag, source):
+    if link in sent_links:
         return
 
-    if is_pokemon:
-        limit = get_pokemon_limit(title)
-        if price > limit:
-            return
-    else:
-        if price > MAX_PRICE_CONSOLE:
-            return
+    sent_links.add(link)
 
-    msg = f"""🔥 OKAZJA
+    msg = f"""🔥 OKAZJA ({tag})
 
-📦 {title[:80]}
+📦 {title}
 
 💰 {price} zł
 📍 {source}
@@ -163,42 +99,58 @@ def send(title, price, link, source, is_pokemon=False):
 🔗 {link}
 """
 
-    print(msg)
-    send_telegram(msg)
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    sent_count += 1
+    try:
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
+    except:
+        pass
 
 
 # =========================
 # 🟢 OLX
 # =========================
-def olx_search(query, label, is_pokemon=False):
-    print(f"\n🟢 OLX {label}...")
+def olx_search(query):
+    print(f"\n🟢 OLX {query}")
 
     url = f"https://www.olx.pl/oferty/q-{query}/"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
-    items = soup.select("div[data-cy='l-card']")
 
+    items = soup.select("div[data-cy='l-card']")
     print(f"📦 {len(items)}")
 
+    sent = 0
+
     for item in items:
+        if sent >= 5:
+            break
+
         try:
             title = item.select_one("h6").text
             link = item.select_one("a")["href"]
-            price = get_price(item.get_text())
 
+            full = item.get_text()
+
+            if "promowane" in clean(full):
+                continue
+
+            price = get_price(full)
             if not price:
                 continue
 
             if not is_valid(title):
                 continue
 
-            if is_pokemon and not is_good_pokemon(title):
+            tag = is_target(title, price)
+            if not tag:
                 continue
 
-            send(title, price, link, f"OLX {label}", is_pokemon)
+            send(title, price, link, tag, "OLX")
+            sent += 1
 
         except:
             continue
@@ -207,32 +159,44 @@ def olx_search(query, label, is_pokemon=False):
 # =========================
 # 🟣 VINTED
 # =========================
-def vinted_search(query, is_pokemon=False):
-    print(f"\n🟣 VINTED {query}...")
+def vinted_search(query):
+    print(f"\n🟣 VINTED {query}")
 
     url = f"https://www.vinted.pl/catalog?search_text={query}"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
-    items = soup.select("div.feed-grid__item")
 
+    items = soup.select("div.feed-grid__item")
     print(f"📦 {len(items)}")
 
+    sent = 0
+
     for item in items:
+        if sent >= 5:
+            break
+
         try:
             text = item.get_text()
-            price = get_price(text)
+            link_tag = item.find("a")
 
+            if not link_tag:
+                continue
+
+            link = "https://www.vinted.pl" + link_tag.get("href")
+
+            price = get_price(text)
             if not price:
                 continue
 
             if not is_valid(text):
                 continue
 
-            if is_pokemon and not is_good_pokemon(text):
+            tag = is_target(text, price)
+            if not tag:
                 continue
 
-            send(text[:80], price, "brak linku", f"VINTED {query}", is_pokemon)
+            send(text[:80], price, link, tag, "VINTED")
+            sent += 1
 
         except:
             continue
@@ -241,59 +205,64 @@ def vinted_search(query, is_pokemon=False):
 # =========================
 # 🟠 ALLEGRO LOKALNIE
 # =========================
-def allegro_local(query, is_pokemon=False):
-    print(f"\n🟠 ALLEGRO LOKALNIE {query}...")
+def allegro_local(query):
+    print(f"\n🟠 ALLEGRO {query}")
 
     url = f"https://allegrolokalnie.pl/oferty/q/{query}"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
-    items = soup.select("article")
 
+    items = soup.select("article")
     print(f"📦 {len(items)}")
 
-    for item in items:
-        try:
-            title = item.get_text()
-            price = get_price(title)
+    sent = 0
 
+    for item in items:
+        if sent >= 5:
+            break
+
+        try:
+            text = item.get_text()
+
+            if "promowane" in clean(text):
+                continue
+
+            link_tag = item.find("a")
+            if not link_tag:
+                continue
+
+            link = "https://allegrolokalnie.pl" + link_tag.get("href")
+
+            price = get_price(text)
             if not price:
                 continue
 
-            if not is_valid(title):
+            if not is_valid(text):
                 continue
 
-            if is_pokemon and not is_good_pokemon(title):
+            tag = is_target(text, price)
+            if not tag:
                 continue
 
-            send(title[:80], price, "brak linku", f"ALLEGRO LOKALNE {query}", is_pokemon)
+            send(text[:80], price, link, tag, "ALLEGRO")
+            sent += 1
 
         except:
             continue
 
 
 # =========================
-# 🚀 START
+# 🚀 LOOP
 # =========================
-print("🚀 FINAL SNIPER BOT v5")
-print("📤 START")
+print("🚀 SNIPER START")
 
-# 🎯 POKEMON
-olx_search("pokemon", "POKEMON", True)
-vinted_search("pokemon", True)
-allegro_local("pokemon", True)
+while True:
+    try:
+        olx_search("pokemon")
+        vinted_search("pokemon")
+        allegro_local("pokemon")
 
-# 🎮 KONSOLE
-olx_search("psp", "PSP")
-olx_search("nintendo 3ds", "3DS")
-olx_search("gameboy", "GAMEBOY")
+    except Exception as e:
+        print("ERROR:", e)
 
-vinted_search("psp")
-vinted_search("nintendo 3ds")
-vinted_search("gameboy")
-
-allegro_local("psp")
-allegro_local("nintendo 3ds")
-allegro_local("gameboy")
-
-print(f"\n📤 WYSŁANO: {sent_count}")
+    time.sleep(60)
