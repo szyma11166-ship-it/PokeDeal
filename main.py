@@ -14,16 +14,17 @@ HEADERS = {
 }
 
 # =========================
-# BLACKLIST (MOCNA)
+# BLACKLIST PRO++
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
     "funko", "maskotka", "bulk", "mix",
     "pojedyncza", "single", "karta", "karty",
     "promo", "gx", "v", "ex", "vmax", "vstar",
-    "ładowarka", "zasilacz", "kabel",
-    "uszkodz", "na części", "części",
-    "gra", "gry", "cd", "dvd"
+    "ładowarka", "zasilacz", "kabel", "adapter",
+    "gra", "gry", "game", "cd", "dvd",
+    "plecak", "torba", "etui", "case",
+    "lego", "zestaw lego"
 ]
 
 bad_languages = [
@@ -59,23 +60,11 @@ def is_new(link):
     seen_links.add(link)
     return True
 
-# 🔥 FIX NA GB / zł
 def extract_price(text):
     text = text.lower().replace(",", ".")
-
-    # 🎯 najpierw szukaj ceny przed zł
     match = re.search(r"(\d+[.,]?\d*)\s*zł", text)
     if match:
         return float(match.group(1))
-
-    # fallback
-    prices = re.findall(r"\d+\.\d+|\d+", text)
-
-    for p in prices:
-        val = float(p)
-        if 20 < val < 10000:
-            return val
-
     return None
 
 def is_bad(name):
@@ -91,45 +80,33 @@ def is_pokemon(name):
 def is_real_pokemon(name):
     return any(k in name for k in [
         "booster", "etb", "elite trainer box",
-        "booster bundle", "ultra premium",
-        "collection", "box", "tin", "set"
+        "bundle", "collection", "box", "tin", "set"
     ])
 
 def pokemon_level(name, price):
-    name = name.lower()
-
-    if "elite trainer box" in name or "etb" in name:
+    if "etb" in name or "elite trainer" in name:
         if price < 250:
             return "🔥🔥🔥 ETB"
-
-    if "bundle" in name or "set" in name or "3 booster" in name or "4 booster" in name:
+    if "bundle" in name or "set" in name:
         if price < 120:
             return "🔥🔥 BUNDLE"
-
-    if "booster" in name and any(x in name for x in ["2", "3", "4", "5"]):
-        if price < 120:
-            return "🔥🔥 MULTI"
-
-    if "booster" in name and "box" not in name:
-        if price < 20:
-            return "🔥 BOOSTER"
-
-    if "ultra premium" in name:
-        if price < 500:
-            return "🔥🔥🔥 PREMIUM"
-
-    if "tin" in name or "collection" in name:
-        if price < 150:
-            return "🔥 COLLECTION"
-
+    if "booster" in name and price < 20:
+        return "🔥 BOOSTER"
+    if "ultra premium" in name and price < 500:
+        return "🔥🔥🔥 PREMIUM"
     return None
 
 # =========================
-# KONSOLE
+# KONSOLE (TYLKO SPRZĘT)
 # =========================
 def is_console(name):
     return any(k in name for k in [
         "psp", "3ds", "dsi", "gameboy", "gba"
+    ])
+
+def is_real_console(name):
+    return any(k in name for k in [
+        "konsola", "console", "sprzedam", "zestaw", "gb", "edition"
     ])
 
 def console_level(name, price):
@@ -144,7 +121,7 @@ def console_level(name, price):
     return None
 
 # =========================
-# OLX SEARCH
+# OLX
 # =========================
 def scan_olx(url, label):
     print(f"\n🟢 OLX {label}...")
@@ -170,16 +147,15 @@ def scan_olx(url, label):
             if not price:
                 continue
 
+            tag = None
+
             # 🎯 POKEMON
             if is_pokemon(text) and is_real_pokemon(text):
                 tag = pokemon_level(text, price)
 
-            # 🎮 KONSOLE
-            elif is_console(text):
+            # 🎮 KONSOLE (TYLKO PRAWDZIWE)
+            elif is_console(text) and is_real_console(text):
                 tag = console_level(text, price)
-
-            else:
-                continue
 
             if tag:
                 print("✅", text[:60])
@@ -191,18 +167,18 @@ def scan_olx(url, label):
 # =========================
 # START
 # =========================
-print("🚀 FINAL ULTRA BOT")
+print("🚀 FINAL SNIPER BOT")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
     scan_olx("https://www.olx.pl/oferty/q-pokemon/", "POKEMON")
-    time.sleep(10)
+    time.sleep(12)
 
     scan_olx("https://www.olx.pl/oferty/q-psp/", "PSP")
-    time.sleep(10)
+    time.sleep(12)
 
     scan_olx("https://www.olx.pl/oferty/q-nintendo-3ds/", "3DS")
-    time.sleep(10)
+    time.sleep(12)
 
     scan_olx("https://www.olx.pl/oferty/q-gameboy/", "GAMEBOY")
-    time.sleep(15)
+    time.sleep(20)
