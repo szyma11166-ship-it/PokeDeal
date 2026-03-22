@@ -14,19 +14,31 @@ HEADERS = {
 }
 
 # =========================
-# BLACKLIST (AGRESYWNA)
+# BLACKLIST (ROZSZERZONA)
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
     "funko", "lego", "maskotka", "plush",
-    "koszulka", "gra planszowa",
-    "bulk", "mix", "losowe",
+    "gra planszowa",
+    "bulk", "mix", "losowe", "zestaw kart",
+    "pojedyncza", "single", "karta", "karty",
     "etui", "pudełko", "box empty",
     "uszkodz", "na części",
 ]
 
 # =========================
-# SEND (ŁADNY FORMAT)
+# JĘZYKI DO WYKLUCZENIA
+# =========================
+bad_languages = [
+    "japanese", "japo", "jp",
+    "german", "niem", "de",
+    "french", "fr",
+    "italian", "it",
+    "hiszpa", "es"
+]
+
+# =========================
+# SEND
 # =========================
 def send(title, price, link, tag, shop):
     msg = f"""
@@ -68,23 +80,29 @@ def is_blacklisted(name):
     name = name.lower()
     return any(word in name for word in blacklist)
 
+def is_bad_language(name):
+    name = name.lower()
+    return any(lang in name for lang in bad_languages)
+
 # =========================
-# TYLKO PRAWDZIWY POKEMON TCG
+# TYLKO SEALED POKEMON ENG
 # =========================
 def is_real_pokemon(name):
     name = name.lower()
 
-    keywords = [
-        "pokemon tcg",
+    # musi być produkt sealed
+    sealed_keywords = [
         "booster",
         "elite trainer box",
         "etb",
         "booster bundle",
         "ultra premium",
-        "collection"
+        "collection",
+        "premium collection",
+        "box"
     ]
 
-    return any(k in name for k in keywords)
+    return any(k in name for k in sealed_keywords)
 
 # =========================
 # POZIOMY OKAZJI
@@ -104,13 +122,10 @@ def get_level(name, price):
     if "ultra premium" in name and price < 550:
         return "🔥🔥🔥 ULTRA PREMIUM"
 
-    if price < 70:
-        return "🟡 TANIE"
-
     return None
 
 # =========================
-# OLX (NAPRAWIONE)
+# OLX (FINAL FILTER)
 # =========================
 def check_olx():
     print("\n🟢 OLX...")
@@ -136,6 +151,9 @@ def check_olx():
             if is_blacklisted(text):
                 continue
 
+            if is_bad_language(text):
+                continue
+
             if not is_real_pokemon(text):
                 continue
 
@@ -152,12 +170,12 @@ def check_olx():
             continue
 
 # =========================
-# AMAZON (OCZYSZCZONY)
+# AMAZON
 # =========================
 def check_amazon():
     print("\n🟡 AMAZON...")
 
-    url = "https://www.amazon.pl/s?k=pokemon+tcg"
+    url = "https://www.amazon.pl/s?k=pokemon+tcg+booster"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -173,6 +191,9 @@ def check_amazon():
                 continue
 
             if is_blacklisted(text):
+                continue
+
+            if is_bad_language(text):
                 continue
 
             if not is_real_pokemon(text):
@@ -193,7 +214,7 @@ def check_amazon():
 # =========================
 # START
 # =========================
-print("🚀 FINAL CLEAN BOT START")
+print("🚀 ULTRA CLEAN BOT START")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
