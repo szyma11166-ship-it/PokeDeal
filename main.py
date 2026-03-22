@@ -1,6 +1,7 @@
 import requests
 import time
 import os
+import xml.etree.ElementTree as ET
 import re
 
 TOKEN = os.environ.get("TOKEN")
@@ -9,23 +10,12 @@ CHAT_ID = "-1003743099672"
 seen_links = set()
 
 # =========================
-# BLACKLIST
-# =========================
-blacklist = [
-    "etui", "case", "pokrowiec", "naklejka", "folia",
-    "szkło", "uszkodz", "części", "na części",
-    "pudełko", "box empty",
-    "obserwuj", "zamienię", "za darmo",
-    "gratis", "oddam", "rezerwacja"
-]
-
-# =========================
 # SEND
 # =========================
 def send(title, price, link, tag):
     msg = f"{tag} • Allegro\n\n📦 {title}\n💸 {price} zł\n\n🔗 {link}"
 
-    print("📤 WYSYŁAM:", title[:60])
+    print("📤", title[:60])
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
@@ -39,8 +29,21 @@ def is_new(link):
     seen_links.add(link)
     return True
 
-def is_blacklisted(name):
-    return any(word in name.lower() for word in blacklist)
+# =========================
+# PRICE
+# =========================
+def extract_price(text):
+    try:
+        text = text.replace(",", ".")
+        prices = re.findall(r"\d+\.\d+|\d+", text)
+        for p in prices:
+            val = float(p)
+            if val > 20:
+                return val
+    except:
+        return None
+
+    return None
 
 # =========================
 # POKEMON DEALS
@@ -60,40 +63,32 @@ def is_pokemon_deal(name, price):
     return None
 
 # =========================
-# ALLEGRO API
+# ALLEGRO RSS (WORKING)
 # =========================
 def check_allegro():
-    print("\n🟡 ALLEGRO API...")
+    print("\n🟡 ALLEGRO RSS...")
 
-    url = "https://api.allegro.pl/offers/listing?phrase=pokemon&limit=20"
-
-    headers = {
-        "Accept": "application/vnd.allegro.public.v1+json",
-        "User-Agent": "Mozilla/5.0"
-    }
+    url = "https://allegro.pl/rss/oferty?q=pokemon"
 
     try:
-        r = requests.get(url, headers=headers)
-        data = r.json()
+        r = requests.get(url)
+        root = ET.fromstring(r.content)
 
-        items = data.get("items", {}).get("regular", [])
+        items = root.findall(".//item")
         print("📦 ZNALEZIONO:", len(items))
 
         for item in items:
             try:
-                title = item["name"]
-                link = item["url"]
-                price = float(item["sellingMode"]["price"]["amount"])
-
-                print("💸", price, "|", title[:50])
+                title = item.find("title").text
+                link = item.find("link").text
+                desc = item.find("description").text
 
                 if not is_new(link):
                     continue
 
-                if is_blacklisted(title):
-                    continue
+                price = extract_price(desc)
 
-                if price < 20:
+                if not price:
                     continue
 
                 tag = is_pokemon_deal(title, price)
@@ -105,14 +100,14 @@ def check_allegro():
                 continue
 
     except:
-        print("❌ API ERROR")
+        print("❌ RSS ERROR")
 
 # =========================
 # START
 # =========================
-print("🚀 ALLEGRO API BOT START")
+print("🚀 RSS BOT START")
 send("START", 0, "", "🚀 SYSTEM")
 
 while True:
     check_allegro()
-    time.sleep(30)
+    time.sleep(60)
