@@ -10,6 +10,16 @@ CHAT_ID = "-1003743099672"
 seen_links = set()
 
 # =========================
+# HEADERS (FIX ALLEGRO)
+# =========================
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
+    "Accept": "text/html,application/xhtml+xml",
+    "Connection": "keep-alive"
+}
+
+# =========================
 # BLACKLIST
 # =========================
 blacklist = [
@@ -39,7 +49,7 @@ def send(title, price, link, tag, market=None, shop=""):
 
     msg += f"\n🔗 {link}"
 
-    print("📤 WYSYŁAM:", msg[:100])  # DEBUG
+    print("📤 WYSYŁAM:", msg[:100])
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
@@ -101,7 +111,8 @@ def get_market_price(name):
     try:
         short = " ".join(name.split()[:5])
         url = f"https://allegro.pl/listing?string={short.replace(' ', '%20')}"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+
+        r = requests.get(url, headers=HEADERS)
         soup = BeautifulSoup(r.text, "html.parser")
 
         prices = []
@@ -116,11 +127,11 @@ def get_market_price(name):
 
         if len(prices) >= 3:
             avg = sum(prices)/len(prices)
-            print("📊 MARKET:", avg)  # DEBUG
+            print("📊 MARKET:", avg)
             return avg
 
     except:
-        print("❌ MARKET ERROR")  # DEBUG
+        print("❌ MARKET ERROR")
         return None
 
     return None
@@ -133,7 +144,7 @@ def rate_deal(price, market):
         return None
 
     ratio = price / market
-    print(f"📉 RATIO: {ratio:.2f}")  # DEBUG
+    print(f"📉 RATIO: {ratio:.2f}")
 
     if ratio < 0.5:
         return "🔥🔥🔥 MEGA FLIP"
@@ -145,55 +156,60 @@ def rate_deal(price, market):
     return None
 
 def is_general_deal(name, price):
-    print("🔎 SPRAWDZAM:", name[:50], "|", price)  # DEBUG
+    print("🔎 SPRAWDZAM:", name[:50], "|", price)
 
     market = get_market_price(name)
 
     if market:
         rating = rate_deal(price, market)
         if rating:
-            print("✅ OKAZJA!")  # DEBUG
+            print("✅ OKAZJA!")
             return rating, market
 
     if price < 150:
-        print("💰 TANIE fallback")  # DEBUG
+        print("💰 TANIE fallback")
         return "💰 TANIE", price
 
-    print("❌ ODRZUCONE")  # DEBUG
+    print("❌ ODRZUCONE")
     return None, None
 
 # =========================
-# ALLEGRO
+# ALLEGRO (FIXED)
 # =========================
 def check_allegro():
-    print("\n🟡 SPRAWDZAM ALLEGRO...")  # DEBUG
+    print("\n🟡 SPRAWDZAM ALLEGRO...")
 
-    url = "https://allegro.pl/listing?string=pokemon%20lego%20ps5%20xbox"
-    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    url = "https://allegro.pl/kategoria/gry-karciane-pokemon-260080"
+
+    r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.find_all("article")
-    print("📦 ZNALEZIONO:", len(items))  # DEBUG
+    print("📦 ZNALEZIONO:", len(items))
 
     for item in items:
         try:
             text = item.get_text().lower()
-            link = "https://allegro.pl" + item.find("a")["href"]
 
-            price = extract_price(text)
-            print("💸 CENA:", price)  # DEBUG
-
-            if not price or is_blacklisted(text) or not is_new(link):
+            link_tag = item.find("a")
+            if not link_tag:
                 continue
 
-            if is_pokemon(text):
-                tag = is_pokemon_deal(text, price)
-                if tag:
-                    send(text[:80], price, link, tag, shop="Allegro")
-            else:
-                tag, market = is_general_deal(text, price)
-                if tag:
-                    send(text[:80], price, link, tag, market, "Allegro")
+            link = "https://allegro.pl" + link_tag["href"]
+
+            price = extract_price(text)
+            print("💸 CENA:", price)
+
+            if not price:
+                continue
+
+            if is_blacklisted(text) or not is_new(link):
+                continue
+
+            tag = is_pokemon_deal(text, price)
+
+            if tag:
+                send(text[:80], price, link, tag, shop="Allegro")
 
         except:
             continue
