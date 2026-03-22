@@ -2,12 +2,13 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import time
+import os
 
 # =========================
 # 🔑 TELEGRAM
 # =========================
-BOT_TOKEN = "TU_WKLEJ_SWÓJ_NOWY_TOKEN"
-CHAT_ID = "-1003743099672"
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # z Railway Variables
+CHAT_ID = "-1003743099672"  # na stałe
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -299,6 +300,7 @@ def allegro_local(query):
 # LOOP
 # =========================
 print("🚀 SNIPER START")
+print("TOKEN:", BOT_TOKEN)
 
 while True:
     try:
