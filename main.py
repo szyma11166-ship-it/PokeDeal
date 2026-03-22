@@ -27,7 +27,7 @@ def send(title, price, link, tag, shop):
 🔗 {link}
 """
 
-    print("📤", title[:60])
+    print("📤", title[:60], "|", price)
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
@@ -53,24 +53,35 @@ def extract_price(text):
     return None
 
 # =========================
-# POKEMON
+# POKEMON DEAL
 # =========================
 def is_pokemon_deal(name, price):
     name = name.lower()
 
-    if "elite trainer box" in name and price < 300:
+    if "elite trainer box" in name and price < 320:
         return "🟣 ETB"
-    if "booster bundle" in name and price < 120:
+    if "booster bundle" in name and price < 140:
         return "🟣 BOOSTER BUNDLE"
-    if "booster" in name and "box" not in name and price < 25:
+    if "booster" in name and "box" not in name and price < 30:
         return "🟣 BOOSTER"
-    if "ultra premium" in name and price < 600:
+    if "ultra premium" in name and price < 650:
         return "🟣 ULTRA PREMIUM"
 
     return None
 
 # =========================
-# OLX (DZIAŁA NAJLEPIEJ)
+# FALLBACK (WAŻNE)
+# =========================
+def fallback(name, price):
+    name = name.lower()
+
+    if "pokemon" in name and price < 80:
+        return "🟡 TANIE POKEMON"
+
+    return None
+
+# =========================
+# OLX
 # =========================
 def check_olx():
     print("\n🟢 OLX...")
@@ -96,6 +107,12 @@ def check_olx():
 
             tag = is_pokemon_deal(text, price)
 
+            if tag:
+                send(text[:80], price, link, tag, "OLX")
+                continue
+
+            # fallback
+            tag = fallback(text, price)
             if tag:
                 send(text[:80], price, link, tag, "OLX")
 
@@ -129,6 +146,11 @@ def check_amazon():
 
             tag = is_pokemon_deal(text, price)
 
+            if tag:
+                send(text[:80], price, link, tag, "Amazon")
+                continue
+
+            tag = fallback(text, price)
             if tag:
                 send(text[:80], price, link, tag, "Amazon")
 
