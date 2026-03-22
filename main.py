@@ -4,10 +4,10 @@ import re
 import os
 
 # =========================
-# 🔐 TELEGRAM (ZOSTAW SWOJE!)
+# 🔐 TELEGRAM
 # =========================
 TOKEN = os.getenv("TOKEN")
-CHAT_ID = "-1003743099672"
+CHAT_ID = "-1003743099672"  # 🔥 NA STAŁE
 
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -239,10 +239,10 @@ def vinted_search(query, is_pokemon=False):
 
 
 # =========================
-# 🟠 ALLEGRO
+# 🟠 ALLEGRO LOKALNIE
 # =========================
 def allegro_local(query, is_pokemon=False):
-    print(f"\n🟠 ALLEGRO {query}...")
+    print(f"\n🟠 ALLEGRO LOKALNIE {query}...")
 
     url = f"https://allegrolokalnie.pl/oferty/q/{query}"
     r = requests.get(url, headers=HEADERS)
@@ -266,7 +266,7 @@ def allegro_local(query, is_pokemon=False):
             if is_pokemon and not is_good_pokemon(title):
                 continue
 
-            send(title[:80], price, "brak linku", f"ALLEGRO {query}", is_pokemon)
+            send(title[:80], price, "brak linku", f"ALLEGRO LOKALNE {query}", is_pokemon)
 
         except:
             continue
@@ -275,7 +275,7 @@ def allegro_local(query, is_pokemon=False):
 # =========================
 # 🚀 START
 # =========================
-print("🚀 FINAL SNIPER BOT")
+print("🚀 FINAL SNIPER BOT v5")
 print("📤 START")
 
 # 🎯 POKEMON
