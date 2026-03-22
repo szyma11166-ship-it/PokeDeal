@@ -14,31 +14,22 @@ HEADERS = {
 }
 
 # =========================
-# BLACKLIST (ROZSZERZONA)
+# BLACKLIST
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
-    "funko", "lego", "maskotka", "plush",
-    "gra planszowa",
-    "bulk", "mix", "losowe", "zestaw kart",
+    "funko", "lego", "maskotka",
+    "bulk", "mix", "losowe",
     "pojedyncza", "single", "karta", "karty",
-    "etui", "pudełko", "box empty",
-    "uszkodz", "na części",
 ]
 
-# =========================
-# JĘZYKI DO WYKLUCZENIA
-# =========================
 bad_languages = [
-    "japanese", "japo", "jp",
-    "german", "niem", "de",
-    "french", "fr",
-    "italian", "it",
-    "hiszpa", "es"
+    "japo", "jp", "german", "niem", "de",
+    "french", "fr", "italian", "it"
 ]
 
 # =========================
-# SEND
+# SEND (ŁADNE)
 # =========================
 def send(title, price, link, tag, shop):
     msg = f"""
@@ -50,7 +41,6 @@ def send(title, price, link, tag, shop):
 
 🔗 {link}
 """
-
     print("📤", title[:60], "|", price)
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -76,36 +66,23 @@ def extract_price(text):
 
     return None
 
-def is_blacklisted(name):
+def is_bad(name):
     name = name.lower()
-    return any(word in name for word in blacklist)
+    return any(w in name for w in blacklist) or any(l in name for l in bad_languages)
 
-def is_bad_language(name):
+def is_real(name):
     name = name.lower()
-    return any(lang in name for lang in bad_languages)
-
-# =========================
-# TYLKO SEALED POKEMON ENG
-# =========================
-def is_real_pokemon(name):
-    name = name.lower()
-
-    # musi być produkt sealed
-    sealed_keywords = [
+    return any(k in name for k in [
         "booster",
         "elite trainer box",
         "etb",
         "booster bundle",
         "ultra premium",
-        "collection",
-        "premium collection",
-        "box"
-    ]
-
-    return any(k in name for k in sealed_keywords)
+        "collection"
+    ])
 
 # =========================
-# POZIOMY OKAZJI
+# LEVELS
 # =========================
 def get_level(name, price):
     name = name.lower()
@@ -114,21 +91,21 @@ def get_level(name, price):
         return "🔥🔥🔥 ETB FLIP"
 
     if "booster bundle" in name and price < 110:
-        return "🔥🔥 BOOSTER BUNDLE"
+        return "🔥🔥 BUNDLE"
 
     if "booster" in name and "box" not in name and price < 22:
         return "🔥 BOOSTER"
 
     if "ultra premium" in name and price < 550:
-        return "🔥🔥🔥 ULTRA PREMIUM"
+        return "🔥🔥🔥 PREMIUM"
 
     return None
 
 # =========================
-# OLX (FINAL FILTER)
+# OLX (SNIPER)
 # =========================
 def check_olx():
-    print("\n🟢 OLX...")
+    print("\n🟢 OLX (SNIPER)...")
 
     url = "https://www.olx.pl/oferty/q-pokemon/"
     r = requests.get(url, headers=HEADERS)
@@ -148,13 +125,10 @@ def check_olx():
             if not is_new(link):
                 continue
 
-            if is_blacklisted(text):
+            if is_bad(text):
                 continue
 
-            if is_bad_language(text):
-                continue
-
-            if not is_real_pokemon(text):
+            if not is_real(text):
                 continue
 
             price = extract_price(text)
@@ -165,6 +139,48 @@ def check_olx():
 
             if tag:
                 send(text[:80], price, link, tag, "OLX")
+
+        except:
+            continue
+
+# =========================
+# VINTED (🔥 FLIPY)
+# =========================
+def check_vinted():
+    print("\n🟣 VINTED...")
+
+    url = "https://www.vinted.pl/catalog?search_text=pokemon"
+    r = requests.get(url, headers=HEADERS)
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    for a in soup.find_all("a", href=True):
+        try:
+            text = a.get_text().lower()
+
+            if "pokemon" not in text:
+                continue
+
+            link = a["href"]
+            if not link.startswith("http"):
+                link = "https://www.vinted.pl" + link
+
+            if not is_new(link):
+                continue
+
+            if is_bad(text):
+                continue
+
+            if not is_real(text):
+                continue
+
+            price = extract_price(text)
+            if not price:
+                continue
+
+            tag = get_level(text, price)
+
+            if tag:
+                send(text[:80], price, link, tag, "Vinted")
 
         except:
             continue
@@ -190,13 +206,10 @@ def check_amazon():
             if not is_new(link):
                 continue
 
-            if is_blacklisted(text):
+            if is_bad(text):
                 continue
 
-            if is_bad_language(text):
-                continue
-
-            if not is_real_pokemon(text):
+            if not is_real(text):
                 continue
 
             price = extract_price(text)
@@ -214,12 +227,15 @@ def check_amazon():
 # =========================
 # START
 # =========================
-print("🚀 ULTRA CLEAN BOT START")
+print("🚀 SNIPER BOT START")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
     check_olx()
+    time.sleep(15)
+
+    check_vinted()
     time.sleep(20)
 
     check_amazon()
-    time.sleep(40)
+    time.sleep(30)
