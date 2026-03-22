@@ -7,7 +7,7 @@ import os
 # =========================
 # 🔑 TELEGRAM
 # =========================
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # z Railway Variables
+BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"  # na stałe
 
 def send_telegram(text):
