@@ -14,12 +14,13 @@ HEADERS = {
 }
 
 # =========================
-# BLACKLIST
+# BLACKLIST (OSTRZEJSZY)
 # =========================
 blacklist = [
     "album", "plusz", "figurka", "zabawka",
     "funko", "maskotka", "bulk", "mix",
     "pojedyncza", "single", "karta", "karty",
+    "promo", "gx", "v", "ex", "vmax", "vstar",
     "uszkodz", "na części", "części",
     "gra", "gry", "cd", "dvd"
 ]
@@ -73,7 +74,7 @@ def is_bad(name):
     return any(w in name for w in blacklist) or any(l in name for l in bad_languages)
 
 # =========================
-# POKEMON (NAPRAWIONE)
+# POKEMON
 # =========================
 def is_pokemon(name):
     return "pokemon" in name or "pokémon" in name
@@ -83,38 +84,32 @@ def is_real_pokemon(name):
         "booster", "etb", "elite trainer box",
         "booster bundle", "ultra premium",
         "collection", "box", "tin",
-        "premium", "set"
+        "set"
     ])
 
 def pokemon_level(name, price):
     name = name.lower()
 
-    # 🔥 ETB
     if "elite trainer box" in name or "etb" in name:
         if price < 250:
             return "🔥🔥🔥 ETB"
 
-    # 🔥 BOOSTER BUNDLE / SET
     if "bundle" in name or "set" in name or "3 booster" in name or "4 booster" in name:
         if price < 120:
             return "🔥🔥 BUNDLE"
 
-    # 🔥 MULTI BOOSTER (ważne!)
     if "booster" in name and any(x in name for x in ["2", "3", "4", "5"]):
         if price < 120:
-            return "🔥🔥 MULTI BOOSTER"
+            return "🔥🔥 MULTI"
 
-    # 🔥 SINGLE BOOSTER
     if "booster" in name and "box" not in name:
         if price < 20:
             return "🔥 BOOSTER"
 
-    # 🔥 ULTRA PREMIUM
     if "ultra premium" in name:
         if price < 500:
             return "🔥🔥🔥 PREMIUM"
 
-    # 🔥 TIN / COLLECTION
     if "tin" in name or "collection" in name:
         if price < 150:
             return "🔥 COLLECTION"
@@ -141,17 +136,16 @@ def console_level(name, price):
     return None
 
 # =========================
-# OLX
+# OLX SEARCH (2 SOURCES)
 # =========================
-def check_olx():
-    print("\n🟢 OLX...")
+def scan_olx(url, label):
+    print(f"\n🟢 OLX {label}...")
 
-    url = "https://www.olx.pl/oferty/q-pokemon/"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.find_all("div", {"data-cy": "l-card"})
-    print("📦 ZNALEZIONO:", len(items))
+    print("📦", len(items))
 
     for item in items:
         try:
@@ -168,16 +162,20 @@ def check_olx():
             if not price:
                 continue
 
+            # 🎯 POKEMON
             if is_pokemon(text) and is_real_pokemon(text):
                 tag = pokemon_level(text, price)
+
+            # 🎮 KONSOLE
             elif is_console(text):
                 tag = console_level(text, price)
+
             else:
                 continue
 
             if tag:
                 print("✅", text[:60])
-                send(text[:80], price, link, tag, "OLX")
+                send(text[:80], price, link, tag, f"OLX {label}")
 
         except:
             continue
@@ -185,9 +183,18 @@ def check_olx():
 # =========================
 # START
 # =========================
-print("🚀 FINAL FIX BOT")
+print("🚀 FINAL PRO BOT")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
-    check_olx()
-    time.sleep(20)
+    scan_olx("https://www.olx.pl/oferty/q-pokemon/", "POKEMON")
+    time.sleep(10)
+
+    scan_olx("https://www.olx.pl/oferty/q-psp/", "PSP")
+    time.sleep(10)
+
+    scan_olx("https://www.olx.pl/oferty/q-nintendo-3ds/", "3DS")
+    time.sleep(10)
+
+    scan_olx("https://www.olx.pl/oferty/q-gameboy/", "GAMEBOY")
+    time.sleep(15)
