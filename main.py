@@ -14,7 +14,19 @@ HEADERS = {
 }
 
 # =========================
-# SEND (ŁADNIEJSZY)
+# BLACKLIST (AGRESYWNA)
+# =========================
+blacklist = [
+    "album", "plusz", "figurka", "zabawka",
+    "funko", "lego", "maskotka", "plush",
+    "koszulka", "gra planszowa",
+    "bulk", "mix", "losowe",
+    "etui", "pudełko", "box empty",
+    "uszkodz", "na części",
+]
+
+# =========================
+# SEND (ŁADNY FORMAT)
 # =========================
 def send(title, price, link, tag, shop):
     msg = f"""
@@ -33,7 +45,7 @@ def send(title, price, link, tag, shop):
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 # =========================
-# FILTER
+# HELPERS
 # =========================
 def is_new(link):
     if link in seen_links:
@@ -52,36 +64,53 @@ def extract_price(text):
 
     return None
 
+def is_blacklisted(name):
+    name = name.lower()
+    return any(word in name for word in blacklist)
+
 # =========================
-# POKEMON DEAL
+# TYLKO PRAWDZIWY POKEMON TCG
 # =========================
-def is_pokemon_deal(name, price):
+def is_real_pokemon(name):
     name = name.lower()
 
-    if "elite trainer box" in name and price < 320:
-        return "🟣 ETB"
-    if "booster bundle" in name and price < 140:
-        return "🟣 BOOSTER BUNDLE"
-    if "booster" in name and "box" not in name and price < 30:
-        return "🟣 BOOSTER"
-    if "ultra premium" in name and price < 650:
-        return "🟣 ULTRA PREMIUM"
+    keywords = [
+        "pokemon tcg",
+        "booster",
+        "elite trainer box",
+        "etb",
+        "booster bundle",
+        "ultra premium",
+        "collection"
+    ]
+
+    return any(k in name for k in keywords)
+
+# =========================
+# POZIOMY OKAZJI
+# =========================
+def get_level(name, price):
+    name = name.lower()
+
+    if "elite trainer box" in name and price < 280:
+        return "🔥🔥🔥 ETB FLIP"
+
+    if "booster bundle" in name and price < 110:
+        return "🔥🔥 BOOSTER BUNDLE"
+
+    if "booster" in name and "box" not in name and price < 22:
+        return "🔥 BOOSTER"
+
+    if "ultra premium" in name and price < 550:
+        return "🔥🔥🔥 ULTRA PREMIUM"
+
+    if price < 70:
+        return "🟡 TANIE"
 
     return None
 
 # =========================
-# FALLBACK (WAŻNE)
-# =========================
-def fallback(name, price):
-    name = name.lower()
-
-    if "pokemon" in name and price < 80:
-        return "🟡 TANIE POKEMON"
-
-    return None
-
-# =========================
-# OLX
+# OLX (NAPRAWIONE)
 # =========================
 def check_olx():
     print("\n🟢 OLX...")
@@ -96,23 +125,26 @@ def check_olx():
     for item in items:
         try:
             text = item.get_text().lower()
+
             link = item.find("a")["href"]
+            if not link.startswith("http"):
+                link = "https://www.olx.pl" + link
 
             if not is_new(link):
+                continue
+
+            if is_blacklisted(text):
+                continue
+
+            if not is_real_pokemon(text):
                 continue
 
             price = extract_price(text)
             if not price:
                 continue
 
-            tag = is_pokemon_deal(text, price)
+            tag = get_level(text, price)
 
-            if tag:
-                send(text[:80], price, link, tag, "OLX")
-                continue
-
-            # fallback
-            tag = fallback(text, price)
             if tag:
                 send(text[:80], price, link, tag, "OLX")
 
@@ -120,12 +152,12 @@ def check_olx():
             continue
 
 # =========================
-# AMAZON
+# AMAZON (OCZYSZCZONY)
 # =========================
 def check_amazon():
     print("\n🟡 AMAZON...")
 
-    url = "https://www.amazon.pl/s?k=pokemon"
+    url = "https://www.amazon.pl/s?k=pokemon+tcg"
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -140,17 +172,18 @@ def check_amazon():
             if not is_new(link):
                 continue
 
+            if is_blacklisted(text):
+                continue
+
+            if not is_real_pokemon(text):
+                continue
+
             price = extract_price(text)
             if not price:
                 continue
 
-            tag = is_pokemon_deal(text, price)
+            tag = get_level(text, price)
 
-            if tag:
-                send(text[:80], price, link, tag, "Amazon")
-                continue
-
-            tag = fallback(text, price)
             if tag:
                 send(text[:80], price, link, tag, "Amazon")
 
@@ -160,7 +193,7 @@ def check_amazon():
 # =========================
 # START
 # =========================
-print("🚀 FINAL BOT START")
+print("🚀 FINAL CLEAN BOT START")
 send("BOT START", 0, "", "🚀 SYSTEM", "BOT")
 
 while True:
