@@ -10,7 +10,7 @@ HEADERS = {
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = -1003743099672
 
-print("🚀 SNIPER V6 START")
+print("🚀 SNIPER V7 START")
 
 sent_links = set()
 
@@ -40,17 +40,43 @@ def get_price(text):
 
 
 # =========================
-# GLOBAL FILTER (SMART)
+# GAME DETECTION
+# =========================
+def is_game(title):
+    t = clean(title)
+
+    game_words = [
+        "gra", "game", "fifa", "lego",
+        "pokemon", "mario", "zelda"
+    ]
+
+    return any(g in t for g in game_words)
+
+
+def is_game_bundle(text):
+    t = clean(text)
+
+    bundle_words = [
+        "zestaw", "pakiet", "bundle",
+        "kolekcja", "lot"
+    ]
+
+    many_games = re.search(r"\d+\s*(gier|games)", t)
+
+    return any(b in t for b in bundle_words) or many_games
+
+
+# =========================
+# GLOBAL FILTER
 # =========================
 def is_valid(title, full_text):
     t = clean(title)
     full = clean(full_text)
 
-    # ❌ śmieci totalne
     banned_global = [
         "uszkodz", "na części", "części",
         "konto", "psn", "steam",
-        "bulk", "lot", "mix", "random",
+        "bulk", "mix", "random",
         "japanese", "korea", "korean",
         "de ", "fr ", "it ",
         "zamiennik", "replacement"
@@ -59,7 +85,6 @@ def is_valid(title, full_text):
     if any(b in full for b in banned_global):
         return False
 
-    # ❌ tylko akcesoria (ale nie zestawy!)
     accessory_words = [
         "kabel", "ładowark", "charger",
         "case", "pokrowiec", "etui",
@@ -67,11 +92,22 @@ def is_valid(title, full_text):
         "pad", "joystick", "kontroler"
     ]
 
-    has_console = any(x in full for x in [
-        "psp", "3ds", "gameboy", "nintendo", "konsol"
-    ])
+    console_keywords = [
+        "psp",
+        "nintendo 3ds",
+        "3ds",
+        "gameboy",
+        "game boy",
+        "gba",
+        "gameboy advance",
+        "sp",
+        "konsola",
+        "konsol"
+    ]
 
-    # jeśli NIE ma konsoli i są akcesoria → odrzucamy
+    has_console = any(k in full for k in console_keywords)
+
+    # ❌ tylko akcesoria
     if not has_console and any(a in full for a in accessory_words):
         return False
 
@@ -79,25 +115,11 @@ def is_valid(title, full_text):
 
 
 # =========================
-# GAME FILTER
-# =========================
-def is_game(title):
-    t = clean(title)
-
-    game_words = [
-        "gra", "game", "fifa", "lego",
-        "pokemon y", "pokemon x",
-        "mario", "zelda"
-    ]
-
-    return any(g in t for g in game_words)
-
-
-# =========================
 # CONSOLE FILTER
 # =========================
-def console_filter(query, title, price):
+def console_filter(query, title, price, full_text):
     t = clean(title)
+    full = clean(full_text)
     query = query.lower()
 
     # ❌ fake konsole
@@ -107,29 +129,34 @@ def console_filter(query, title, price):
         "retro console", "handheld console"
     ]
 
-    if any(f in t for f in fake_consoles):
+    if any(f in full for f in fake_consoles):
         return False
 
+    # 🎮 gry → tylko zestawy
     if is_game(title):
-        return False
+        if not is_game_bundle(full):
+            return False
+
+        # opcjonalnie limit ceny dla zestawów
+        if price > 150:
+            return False
 
     # 🎯 PSP
     if "psp" in query:
-        return "psp" in t and price <= 200
+        return "psp" in full and price <= 200
 
     # 🎯 3DS
     if "3ds" in query:
-        return ("3ds" in t or "nintendo 3ds" in t) and price <= 400
+        return "3ds" in full and price <= 400
 
-    # 🎯 GAMEBOY (bardziej dokładnie)
+    # 🎯 GAMEBOY
     if "gameboy" in query:
         real = [
             "gameboy", "game boy",
-            "gbc", "gameboy color",
             "gba", "gameboy advance",
             "sp"
         ]
-        return any(r in t for r in real) and price <= 300
+        return any(r in full for r in real) and price <= 300
 
     return False
 
@@ -144,7 +171,7 @@ def pokemon_filter(title, price):
         return False
 
     banned = [
-        "bulk", "lot", "mix", "random",
+        "bulk", "mix", "random",
         "energy", "kod", "online",
         "korea", "japanese",
         "de ", "fr ", "it "
@@ -232,7 +259,7 @@ def process_items(items, query, source, get_title, get_link, full_text):
                 if not pokemon_filter(title, price):
                     continue
             else:
-                if not console_filter(query, title, price):
+                if not console_filter(query, title, price, text):
                     continue
 
             send(title, price, link, source)
