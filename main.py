@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import time
+import random
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
@@ -10,7 +11,7 @@ HEADERS = {
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = -1003743099672
 
-print("🚀 SNIPER V7 START")
+print("🚀 SNIPER V7.1 START")
 
 sent_links = set()
 
@@ -40,13 +41,14 @@ def get_price(text):
 
 
 # =========================
-# GAME DETECTION
+# GAME DETECTION (FIX)
 # =========================
-def is_game(title):
-    t = clean(title)
+def is_game(text):
+    t = clean(text)
 
     game_words = [
-        "gra", "game", "fifa", "lego",
+        "gra", "gry", "game", "games",
+        "fifa", "lego",
         "pokemon", "mario", "zelda"
     ]
 
@@ -107,7 +109,6 @@ def is_valid(title, full_text):
 
     has_console = any(k in full for k in console_keywords)
 
-    # ❌ tylko akcesoria
     if not has_console and any(a in full for a in accessory_words):
         return False
 
@@ -115,14 +116,13 @@ def is_valid(title, full_text):
 
 
 # =========================
-# CONSOLE FILTER
+# CONSOLE FILTER (FIX)
 # =========================
 def console_filter(query, title, price, full_text):
     t = clean(title)
     full = clean(full_text)
     query = query.lower()
 
-    # ❌ fake konsole
     fake_consoles = [
         "powkiddy", "anbernic", "sup",
         "gamebox", "r36s", "emulator",
@@ -132,24 +132,20 @@ def console_filter(query, title, price, full_text):
     if any(f in full for f in fake_consoles):
         return False
 
-    # 🎮 gry → tylko zestawy
-    if is_game(title):
+    # 🔥 FIX: gry sprawdzane po CAŁYM TEKŚCIE
+    if is_game(full):
         if not is_game_bundle(full):
             return False
 
-        # opcjonalnie limit ceny dla zestawów
         if price > 150:
             return False
 
-    # 🎯 PSP
     if "psp" in query:
         return "psp" in full and price <= 200
 
-    # 🎯 3DS
     if "3ds" in query:
         return "3ds" in full and price <= 400
 
-    # 🎯 GAMEBOY
     if "gameboy" in query:
         real = [
             "gameboy", "game boy",
@@ -255,6 +251,16 @@ def process_items(items, query, source, get_title, get_link, full_text):
             if not is_valid(title, text):
                 continue
 
+            # 🔥 filtr starych ofert (prosty)
+            text_clean = clean(text)
+            old_words = [
+                "wczoraj", "2 dni temu", "3 dni temu",
+                "tydzień temu", "7 dni temu"
+            ]
+
+            if any(o in text_clean for o in old_words):
+                continue
+
             if query == "pokemon":
                 if not pokemon_filter(title, price):
                     continue
@@ -270,12 +276,12 @@ def process_items(items, query, source, get_title, get_link, full_text):
 
 
 # =========================
-# OLX
+# OLX (FIX)
 # =========================
 def olx_search(query):
     print(f"\n🟢 OLX {query}")
 
-    url = f"https://www.olx.pl/oferty/q-{query}/?search%5Border%5D=created_at:desc"
+    url = f"https://www.olx.pl/oferty/q-{query}/?search%5Border%5D=created_at:desc&_={random.randint(1,9999999)}"
     r = requests.get(url, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -291,13 +297,17 @@ def olx_search(query):
 
 
 # =========================
-# VINTED
+# VINTED (FIX)
 # =========================
 def vinted_search(query):
     print(f"\n🟣 VINTED {query}")
 
-    url = f"https://www.vinted.pl/catalog?search_text={query}"
-    r = requests.get(url, headers=HEADERS, timeout=10)
+    params = {
+        "search_text": query,
+        "order": "newest_first"
+    }
+
+    r = requests.get("https://www.vinted.pl/catalog", params=params, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("div.feed-grid__item")
@@ -312,12 +322,12 @@ def vinted_search(query):
 
 
 # =========================
-# ALLEGRO
+# ALLEGRO (FIX)
 # =========================
 def allegro_local(query):
     print(f"\n🟠 ALLEGRO {query}")
 
-    url = f"https://allegrolokalnie.pl/oferty/q/{query}"
+    url = f"https://allegrolokalnie.pl/oferty/q/{query}?order=newest"
     r = requests.get(url, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
