@@ -1,17 +1,17 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import time
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# 🔑 TOKEN + CHAT ID
+# 🔑 TELEGRAM
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = -1003743099672
 
-print("🚀 SNIPER START")
-print("TOKEN:", BOT_TOKEN)
+print("🚀 SNIPER V5 START")
 
 sent_links = set()
 
@@ -73,20 +73,17 @@ def is_game(title):
 
 
 # =========================
-# CONSOLE FILTER
+# 🎮 CONSOLE FILTER
 # =========================
 def console_filter(query, title, price):
     t = clean(title)
 
-    # musi być sprzęt
     if not any(x in t for x in ["konsol", "console", "psp", "3ds", "gameboy", "nintendo"]):
         return False
 
-    # wywal gry
     if is_game(title):
         return False
 
-    # limity cenowe
     if "psp" in query:
         return price <= 200
 
@@ -94,6 +91,49 @@ def console_filter(query, title, price):
         return price <= 400
 
     if "gameboy" in query:
+        return price <= 300
+
+    return False
+
+
+# =========================
+# 🧢 POKEMON FILTER (FINAL)
+# =========================
+def pokemon_filter(title, price):
+    t = clean(title)
+
+    if "pokemon" not in t:
+        return False
+
+    # ❌ śmieci
+    banned = [
+        "bulk", "lot", "mix", "random",
+        "energy", "kod", "online",
+        "korea", "japanese",
+        "de ", "fr ", "it "
+    ]
+
+    if any(b in t for b in banned):
+        return False
+
+    # BOOSTER
+    if "booster" in t:
+        return price <= 20
+
+    # ETB
+    if "etb" in t or "elite trainer box" in t:
+        return price <= 300
+
+    # FIRST PARTNER
+    if "first partner" in t:
+        return price <= 150
+
+    # POKEMON DAY
+    if "pokemon day" in t:
+        return price <= 70
+
+    # BUNDLE / ZESTAW
+    if any(x in t for x in ["zestaw", "bundle", "pakiet", "kolekcja"]):
         return price <= 300
 
     return False
@@ -129,11 +169,45 @@ def send(title, price, link, source):
             "text": msg
         })
 
-        print("📨 TELEGRAM STATUS:", r.status_code)
-        print("📨 RESPONSE:", r.text)
+        print("📨", r.status_code)
 
     except Exception as e:
         print("❌ TELEGRAM ERROR:", e)
+
+
+# =========================
+# CORE SEARCH
+# =========================
+def process_items(items, query, source, get_title, get_link, full_text):
+    count = 0
+
+    for item in items:
+        if count >= 5:
+            break
+
+        try:
+            title = get_title(item)
+            link = get_link(item)
+            text = full_text(item)
+
+            price = get_price(text)
+
+            if not price or not is_valid(title):
+                continue
+
+            # 🔥 wybór filtra
+            if query == "pokemon":
+                if not pokemon_filter(title, price):
+                    continue
+            else:
+                if not console_filter(query, title, price):
+                    continue
+
+            send(title, price, link, source)
+            count += 1
+
+        except:
+            continue
 
 
 # =========================
@@ -144,34 +218,19 @@ def olx_search(query):
 
     url = f"https://www.olx.pl/oferty/q-{query}/"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
+
     items = soup.select("div[data-cy='l-card']")
+    print("📦", len(items))
 
-    print("📦 znaleziono:", len(items))
-
-    count = 0
-
-    for item in items:
-        try:
-            title = item.select_one("h6").text
-            link = item.select_one("a")["href"]
-            price = get_price(item.get_text())
-
-            if not price or not is_valid(title):
-                continue
-
-            if not console_filter(query, title, price):
-                continue
-
-            send(title, price, link, "OLX")
-            count += 1
-
-            if count >= 5:
-                break
-
-        except:
-            continue
+    process_items(
+        items,
+        query,
+        "OLX",
+        lambda i: i.select_one("h6").text,
+        lambda i: i.select_one("a")["href"],
+        lambda i: i.get_text()
+    )
 
 
 # =========================
@@ -182,41 +241,19 @@ def vinted_search(query):
 
     url = f"https://www.vinted.pl/catalog?search_text={query}"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
+
     items = soup.select("div.feed-grid__item")
+    print("📦", len(items))
 
-    print("📦 znaleziono:", len(items))
-
-    count = 0
-
-    for item in items:
-        try:
-            a = item.select_one("a")
-            if not a:
-                continue
-
-            link = a["href"]
-            if not link.startswith("http"):
-                link = "https://www.vinted.pl" + link
-
-            title = item.get_text()
-            price = get_price(title)
-
-            if not price or not is_valid(title):
-                continue
-
-            if not console_filter(query, title, price):
-                continue
-
-            send(title, price, link, "VINTED")
-            count += 1
-
-            if count >= 5:
-                break
-
-        except:
-            continue
+    process_items(
+        items,
+        query,
+        "VINTED",
+        lambda i: i.get_text(),
+        lambda i: "https://www.vinted.pl" + i.select_one("a")["href"] if i.select_one("a") else None,
+        lambda i: i.get_text()
+    )
 
 
 # =========================
@@ -227,59 +264,31 @@ def allegro_local(query):
 
     url = f"https://allegrolokalnie.pl/oferty/q/{query}"
     r = requests.get(url, headers=HEADERS)
-
     soup = BeautifulSoup(r.text, "html.parser")
+
     items = soup.select("article")
+    print("📦", len(items))
 
-    print("📦 znaleziono:", len(items))
-
-    count = 0
-
-    for item in items:
-        try:
-            if "Promowane" in item.get_text():
-                continue
-
-            a = item.select_one("a")
-            if not a:
-                continue
-
-            link = "https://allegrolokalnie.pl" + a["href"]
-
-            title_tag = item.select_one("h2")
-            if not title_tag:
-                continue
-
-            title = title_tag.text
-            price = get_price(item.get_text())
-
-            if not price or not is_valid(title):
-                continue
-
-            if not console_filter(query, title, price):
-                continue
-
-            send(title, price, link, "ALLEGRO")
-            count += 1
-
-            if count >= 5:
-                break
-
-        except:
-            continue
+    process_items(
+        [i for i in items if "Promowane" not in i.get_text()],
+        query,
+        "ALLEGRO",
+        lambda i: i.select_one("h2").text if i.select_one("h2") else "",
+        lambda i: "https://allegrolokalnie.pl" + i.select_one("a")["href"] if i.select_one("a") else None,
+        lambda i: i.get_text()
+    )
 
 
 # =========================
-# START
+# LOOP
 # =========================
-import time
-
-print("🔁 BOT LOOP START")
+print("🔁 LOOP START")
 
 while True:
     try:
         print("\n🚀 NOWY CYKL")
 
+        # 🎮 KONSOLE
         olx_search("psp")
         vinted_search("psp")
         allegro_local("psp")
@@ -292,8 +301,13 @@ while True:
         vinted_search("gameboy")
         allegro_local("gameboy")
 
-        print("⏳ Czekam 60 sekund...\n")
-        time.sleep(60)  # co ile odświeża
+        # 🧢 POKEMON
+        olx_search("pokemon")
+        vinted_search("pokemon")
+        allegro_local("pokemon")
+
+        print("⏳ 60s...\n")
+        time.sleep(60)
 
     except Exception as e:
         print("❌ LOOP ERROR:", e)
