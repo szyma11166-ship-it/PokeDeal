@@ -272,18 +272,29 @@ def allegro_local(query):
 # =========================
 # START
 # =========================
-try:
-    olx_search("psp")
-    vinted_search("psp")
-    allegro_local("psp")
+import time
 
-    olx_search("nintendo 3ds")
-    vinted_search("nintendo 3ds")
-    allegro_local("nintendo 3ds")
+print("🔁 BOT LOOP START")
 
-    olx_search("gameboy")
-    vinted_search("gameboy")
-    allegro_local("gameboy")
+while True:
+    try:
+        print("\n🚀 NOWY CYKL")
 
-except Exception as e:
-    print("❌ ERROR:", e)
+        olx_search("psp")
+        vinted_search("psp")
+        allegro_local("psp")
+
+        olx_search("nintendo 3ds")
+        vinted_search("nintendo 3ds")
+        allegro_local("nintendo 3ds")
+
+        olx_search("gameboy")
+        vinted_search("gameboy")
+        allegro_local("gameboy")
+
+        print("⏳ Czekam 60 sekund...\n")
+        time.sleep(60)  # co ile odświeża
+
+    except Exception as e:
+        print("❌ LOOP ERROR:", e)
+        time.sleep(30)
