@@ -7,7 +7,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = "-1003743099672"
 
 sent_links = set()
