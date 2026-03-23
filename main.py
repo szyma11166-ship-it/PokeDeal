@@ -7,13 +7,13 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# 🔑 TELEGRAM
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = -1003743099672
 
-print("🚀 SNIPER V5 START")
+print("🚀 SNIPER V6 START")
 
 sent_links = set()
+
 
 # =========================
 # CLEAN
@@ -40,21 +40,42 @@ def get_price(text):
 
 
 # =========================
-# GLOBAL FILTER
+# GLOBAL FILTER (SMART)
 # =========================
-def is_valid(title):
+def is_valid(title, full_text):
     t = clean(title)
+    full = clean(full_text)
 
-    banned = [
-        "uszkodz", "części", "na części",
-        "etui", "ładowark", "kabel",
+    # ❌ śmieci totalne
+    banned_global = [
+        "uszkodz", "na części", "części",
         "konto", "psn", "steam",
         "bulk", "lot", "mix", "random",
         "japanese", "korea", "korean",
-        "de ", "fr ", "it "
+        "de ", "fr ", "it ",
+        "zamiennik", "replacement"
     ]
 
-    return not any(b in t for b in banned)
+    if any(b in full for b in banned_global):
+        return False
+
+    # ❌ tylko akcesoria (ale nie zestawy!)
+    accessory_words = [
+        "kabel", "ładowark", "charger",
+        "case", "pokrowiec", "etui",
+        "adapter", "dock", "stacja",
+        "pad", "joystick", "kontroler"
+    ]
+
+    has_console = any(x in full for x in [
+        "psp", "3ds", "gameboy", "nintendo", "konsol"
+    ])
+
+    # jeśli NIE ma konsoli i są akcesoria → odrzucamy
+    if not has_console and any(a in full for a in accessory_words):
+        return False
+
+    return True
 
 
 # =========================
@@ -73,31 +94,48 @@ def is_game(title):
 
 
 # =========================
-# 🎮 CONSOLE FILTER
+# CONSOLE FILTER
 # =========================
 def console_filter(query, title, price):
     t = clean(title)
+    query = query.lower()
 
-    if not any(x in t for x in ["konsol", "console", "psp", "3ds", "gameboy", "nintendo"]):
+    # ❌ fake konsole
+    fake_consoles = [
+        "powkiddy", "anbernic", "sup",
+        "gamebox", "r36s", "emulator",
+        "retro console", "handheld console"
+    ]
+
+    if any(f in t for f in fake_consoles):
         return False
 
     if is_game(title):
         return False
 
+    # 🎯 PSP
     if "psp" in query:
-        return price <= 200
+        return "psp" in t and price <= 200
 
+    # 🎯 3DS
     if "3ds" in query:
-        return price <= 400
+        return ("3ds" in t or "nintendo 3ds" in t) and price <= 400
 
+    # 🎯 GAMEBOY (bardziej dokładnie)
     if "gameboy" in query:
-        return price <= 300
+        real = [
+            "gameboy", "game boy",
+            "gbc", "gameboy color",
+            "gba", "gameboy advance",
+            "sp"
+        ]
+        return any(r in t for r in real) and price <= 300
 
     return False
 
 
 # =========================
-# 🧢 POKEMON FILTER (FINAL)
+# POKEMON FILTER
 # =========================
 def pokemon_filter(title, price):
     t = clean(title)
@@ -105,7 +143,6 @@ def pokemon_filter(title, price):
     if "pokemon" not in t:
         return False
 
-    # ❌ śmieci
     banned = [
         "bulk", "lot", "mix", "random",
         "energy", "kod", "online",
@@ -116,23 +153,18 @@ def pokemon_filter(title, price):
     if any(b in t for b in banned):
         return False
 
-    # BOOSTER
     if "booster" in t:
         return price <= 20
 
-    # ETB
     if "etb" in t or "elite trainer box" in t:
         return price <= 300
 
-    # FIRST PARTNER
     if "first partner" in t:
         return price <= 150
 
-    # POKEMON DAY
     if "pokemon day" in t:
         return price <= 70
 
-    # BUNDLE / ZESTAW
     if any(x in t for x in ["zestaw", "bundle", "pakiet", "kolekcja"]):
         return price <= 300
 
@@ -164,25 +196,23 @@ def send(title, price, link, source):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     try:
-        r = requests.post(url, data={
+        requests.post(url, data={
             "chat_id": CHAT_ID,
             "text": msg
-        })
-
-        print("📨", r.status_code)
+        }, timeout=10)
 
     except Exception as e:
         print("❌ TELEGRAM ERROR:", e)
 
 
 # =========================
-# CORE SEARCH
+# CORE
 # =========================
 def process_items(items, query, source, get_title, get_link, full_text):
     count = 0
 
     for item in items:
-        if count >= 5:
+        if count >= 15:
             break
 
         try:
@@ -192,10 +222,12 @@ def process_items(items, query, source, get_title, get_link, full_text):
 
             price = get_price(text)
 
-            if not price or not is_valid(title):
+            if not price:
                 continue
 
-            # 🔥 wybór filtra
+            if not is_valid(title, text):
+                continue
+
             if query == "pokemon":
                 if not pokemon_filter(title, price):
                     continue
@@ -216,17 +248,15 @@ def process_items(items, query, source, get_title, get_link, full_text):
 def olx_search(query):
     print(f"\n🟢 OLX {query}")
 
-    url = f"https://www.olx.pl/oferty/q-{query}/"
-    r = requests.get(url, headers=HEADERS)
+    url = f"https://www.olx.pl/oferty/q-{query}/?search%5Border%5D=created_at:desc"
+    r = requests.get(url, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("div[data-cy='l-card']")
     print("📦", len(items))
 
     process_items(
-        items,
-        query,
-        "OLX",
+        items, query, "OLX",
         lambda i: i.select_one("h6").text,
         lambda i: i.select_one("a")["href"],
         lambda i: i.get_text()
@@ -240,16 +270,14 @@ def vinted_search(query):
     print(f"\n🟣 VINTED {query}")
 
     url = f"https://www.vinted.pl/catalog?search_text={query}"
-    r = requests.get(url, headers=HEADERS)
+    r = requests.get(url, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("div.feed-grid__item")
     print("📦", len(items))
 
     process_items(
-        items,
-        query,
-        "VINTED",
+        items, query, "VINTED",
         lambda i: i.get_text(),
         lambda i: "https://www.vinted.pl" + i.select_one("a")["href"] if i.select_one("a") else None,
         lambda i: i.get_text()
@@ -257,13 +285,13 @@ def vinted_search(query):
 
 
 # =========================
-# ALLEGRO LOKALNIE
+# ALLEGRO
 # =========================
 def allegro_local(query):
     print(f"\n🟠 ALLEGRO {query}")
 
     url = f"https://allegrolokalnie.pl/oferty/q/{query}"
-    r = requests.get(url, headers=HEADERS)
+    r = requests.get(url, headers=HEADERS, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
     items = soup.select("article")
@@ -271,8 +299,7 @@ def allegro_local(query):
 
     process_items(
         [i for i in items if "Promowane" not in i.get_text()],
-        query,
-        "ALLEGRO",
+        query, "ALLEGRO",
         lambda i: i.select_one("h2").text if i.select_one("h2") else "",
         lambda i: "https://allegrolokalnie.pl" + i.select_one("a")["href"] if i.select_one("a") else None,
         lambda i: i.get_text()
@@ -288,23 +315,10 @@ while True:
     try:
         print("\n🚀 NOWY CYKL")
 
-        # 🎮 KONSOLE
-        olx_search("psp")
-        vinted_search("psp")
-        allegro_local("psp")
-
-        olx_search("nintendo 3ds")
-        vinted_search("nintendo 3ds")
-        allegro_local("nintendo 3ds")
-
-        olx_search("gameboy")
-        vinted_search("gameboy")
-        allegro_local("gameboy")
-
-        # 🧢 POKEMON
-        olx_search("pokemon")
-        vinted_search("pokemon")
-        allegro_local("pokemon")
+        for q in ["psp", "nintendo 3ds", "gameboy", "pokemon"]:
+            olx_search(q)
+            vinted_search(q)
+            allegro_local(q)
 
         print("⏳ 60s...\n")
         time.sleep(60)
