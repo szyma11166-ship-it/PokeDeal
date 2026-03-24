@@ -8,7 +8,6 @@ import os
 # =========================
 # CONFIG — uzupełnij zmienne środowiskowe lub wpisz ręcznie
 # =========================
-
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
@@ -20,7 +19,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V7.2 START")
+print("🚀 SNIPER V7.3 START")  # gry 3+, pokemon filter v2
 
 # Persystentny zestaw wysłanych linków (plik tekstowy)
 SENT_FILE = "sent_links.txt"
@@ -77,12 +76,9 @@ def is_game(text):
 
 def is_game_bundle(text):
     t = clean(text)
-    bundle_words = [
-        "zestaw", "pakiet", "bundle",
-        "kolekcja", "lot"
-    ]
-    many_games = re.search(r"\d+\s*(gier|games)", t)
-    return any(b in t for b in bundle_words) or many_games
+    # minimum 3 gry — "3 gier", "5 games" itp.
+    many_games = re.search(r"([3-9]|\d{2,})\s*(gier|games)", t)
+    return bool(many_games)
 
 
 # =========================
@@ -183,26 +179,37 @@ def pokemon_filter(title, price):
         "bulk", "mix", "random",
         "energy", "kod", "online",
         "korea", "japanese",
-        "de ", "fr ", "it "
+        "de ", "fr ", "it ",
+        "karta", "karty", "card", "cards",
+        "single", "holo", "reverse"
     ]
 
     if any(b in t for b in banned):
         return False
 
-    if "booster" in t:
-        return price <= 20
-
+    # ETB
     if "etb" in t or "elite trainer box" in t:
         return price <= 300
 
+    # Booster bundle (6 boosterow)
+    if "booster bundle" in t:
+        return price <= 120
+
+    # Blister 3-pack
+    if "blister" in t or "3-pack" in t or "3 pack" in t or "triple pack" in t:
+        return price <= 80
+
+    # Pojedynczy booster
+    if "booster" in t:
+        return price <= 25
+
+    # First Partner Illustration Collection
     if "first partner" in t:
-        return price <= 150
+        return price <= 200
 
-    if "pokemon day" in t:
-        return price <= 70
-
-    if any(x in t for x in ["zestaw", "bundle", "pakiet", "kolekcja"]):
-        return price <= 300
+    # Pokemon Day (rozne roczniki)
+    if "pokemon day" in t or "pokemon day 2026" in t or "day 2025" in t:
+        return price <= 120
 
     return False
 
