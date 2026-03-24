@@ -19,7 +19,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V7.3 START")  # gry 3+, pokemon filter v2
+print("🚀 SNIPER V7.4 START")  # lepsze filtry + nowe wiadomosci
 
 # Persystentny zestaw wysłanych linków (plik tekstowy)
 SENT_FILE = "sent_links.txt"
@@ -88,12 +88,23 @@ def is_valid(title, full_text):
     full = clean(full_text)
 
     banned_global = [
+        # stan
         "uszkodz", "na części", "części",
+        # konta cyfrowe
         "konto", "psn", "steam",
+        # zbiorniki smieciowe
         "bulk", "mix", "random",
+        # jezyki obce
         "japanese", "korea", "korean",
         "de ", "fr ", "it ",
-        "zamiennik", "replacement"
+        # zamienniki
+        "zamiennik", "replacement",
+        # puste pudelka
+        "pudelko", "opakowanie", "box only",
+        "samo pudelko", "samo opakowanie",
+        # filmy i plyty UMD (PSP)
+        "umd movie", "umd film", "film umd",
+        "umd video", "blu-ray", "dvd"
     ]
 
     if any(b in full for b in banned_global):
@@ -137,7 +148,14 @@ def console_filter(query, title, price, full_text):
     fake_consoles = [
         "powkiddy", "anbernic", "sup",
         "gamebox", "r36s", "emulator",
-        "retro console", "handheld console"
+        "retro console", "handheld console",
+        # chinskie klony PSP
+        "x7", "x7 slim", "x6", "x9",
+        "psp x", "fc3000", "rg35",
+        "1000 gier", "10000 gier", "ponad 1000",
+        # pojedyncze gry / plyty
+        "umd", "littlebigplanet", "gra psp",
+        "gra na psp", "gra do psp"
     ]
 
     if any(f in full for f in fake_consoles):
@@ -217,6 +235,12 @@ def pokemon_filter(title, price):
 # =========================
 # TELEGRAM
 # =========================
+SOURCE_EMOJI = {
+    "OLX": "🟢",
+    "VINTED": "🟣",
+    "ALLEGRO": "🟠"
+}
+
 def send(title, price, link, source):
     if not link or "http" not in link:
         return
@@ -227,11 +251,15 @@ def send(title, price, link, source):
     sent_links.add(link)
     save_sent_link(link)
 
+    src_emoji = SOURCE_EMOJI.get(source, "📍")
+
     msg = (
-        f"🔥 OKAZJA\n\n"
+        f"🔥 *NOWA OKAZJA*\n"
+        f"{'─' * 28}\n"
         f"📦 {title[:80]}\n\n"
-        f"💰 {price} zł\n"
-        f"📍 {source}\n\n"
+        f"💰 *{price} zł*\n"
+        f"{src_emoji} {source}\n"
+        f"{'─' * 28}\n"
         f"🔗 {link}"
     )
 
@@ -240,7 +268,9 @@ def send(title, price, link, source):
     try:
         requests.post(url, data={
             "chat_id": CHAT_ID,
-            "text": msg
+            "text": msg,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": False
         }, timeout=10)
     except Exception as e:
         print(f"❌ TELEGRAM ERROR: {e}")
