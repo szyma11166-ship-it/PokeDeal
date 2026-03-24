@@ -12,14 +12,14 @@ import os
 # =========================
 
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
-CHAT_ID = "-1003743099672" 
+CHAT_ID = "-1003743099672"
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    )
+“User-Agent”: (
+“Mozilla/5.0 (Windows NT 10.0; Win64; x64) “
+“AppleWebKit/537.36 (KHTML, like Gecko) “
+“Chrome/124.0.0.0 Safari/537.36”
+)
 }
 
 print(“🚀 SNIPER V7.2 START”)
