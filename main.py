@@ -19,7 +19,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V7.4 START")  # lepsze filtry + nowe wiadomosci
+print("🚀 SNIPER V7.5 START")  # precyzyjne filtry tytulu, lepszy gameboy, wiecej banow
 
 # Persystentny zestaw wysłanych linków (plik tekstowy)
 SENT_FILE = "sent_links.txt"
@@ -67,9 +67,10 @@ def get_price(text):
 def is_game(text):
     t = clean(text)
     game_words = [
-        "gra", "gry", "game", "games",
-        "fifa", "lego",
-        "pokemon", "mario", "zelda"
+        "gra ", "gry ", " game", " games",
+        "fifa", "lego ", "mario ", "zelda ",
+        "littlebigplanet", "god of war", "monster hunter",
+        "crisis core", "final fantasy", "metal gear"
     ]
     return any(g in t for g in game_words)
 
@@ -77,7 +78,7 @@ def is_game(text):
 def is_game_bundle(text):
     t = clean(text)
     # minimum 3 gry — "3 gier", "5 games" itp.
-    many_games = re.search(r"([3-9]|\d{2,})\s*(gier|games)", t)
+    many_games = re.search(r"([3-9]|\d{2,})\s*(gier|games|gry)", t)
     return bool(many_games)
 
 
@@ -85,54 +86,45 @@ def is_game_bundle(text):
 # GLOBAL FILTER
 # =========================
 def is_valid(title, full_text):
+    t = clean(title)
     full = clean(full_text)
 
+    # Bannowane slowa w TYTULE (najwazniejsze)
+    banned_title = [
+        # puste pudelka i opakowania
+        "pudelko", "pudełko", "opakowanie", "box only",
+        "samo pudelko", "samo opakowanie", "idealne pudelko",
+        "oryginalne opakowanie", "sam box", "karton",
+        # filmy i plyty UMD
+        "umd", "umd movie", "umd film", "film umd", "umd video",
+        # gry — pojedyncze tytuly
+        "gra psp", "gra na psp", "gra do psp",
+        "gra 3ds", "gra na 3ds", "gra do 3ds",
+        "gra gameboy", "gra gba",
+        # konta
+        "konto", "psn", "steam", "kod",
+        # akcesoria bez konsoli w tytule
+        "kabel", "ladowarka", "charger", "bateria", "akumulator",
+        "case", "pokrowiec", "etui", "folia", "szklo",
+        "adapter", "dock", "stacja", "uchwyt",
+        # chinskie klony wprost
+        "x7", "x7 slim", "x6 slim", "x9",
+        "1000 gier", "10000 gier", "ponad 1000 gier",
+    ]
+
+    if any(b in t for b in banned_title):
+        return False
+
+    # Bannowane slowa w pelnym tekscie
     banned_global = [
-        # stan
-        "uszkodz", "na części", "części",
-        # konta cyfrowe
-        "konto", "psn", "steam",
-        # zbiorniki smieciowe
-        "bulk", "mix", "random",
-        # jezyki obce
-        "japanese", "korea", "korean",
-        "de ", "fr ", "it ",
-        # zamienniki
+        "uszkodz", "na czesci", "czesci zamienne",
+        "japanese import", "korea", "korean",
         "zamiennik", "replacement",
-        # puste pudelka
-        "pudelko", "opakowanie", "box only",
-        "samo pudelko", "samo opakowanie",
-        # filmy i plyty UMD (PSP)
-        "umd movie", "umd film", "film umd",
-        "umd video", "blu-ray", "dvd"
+        "blu-ray", " dvd ",
+        "bulk", "random lot",
     ]
 
     if any(b in full for b in banned_global):
-        return False
-
-    accessory_words = [
-        "kabel", "ładowark", "charger",
-        "case", "pokrowiec", "etui",
-        "adapter", "dock", "stacja",
-        "pad", "joystick", "kontroler"
-    ]
-
-    console_keywords = [
-        "psp",
-        "nintendo 3ds",
-        "3ds",
-        "gameboy",
-        "game boy",
-        "gba",
-        "gameboy advance",
-        "sp",
-        "konsola",
-        "konsol"
-    ]
-
-    has_console = any(k in full for k in console_keywords)
-
-    if not has_console and any(a in full for a in accessory_words):
         return False
 
     return True
@@ -141,45 +133,81 @@ def is_valid(title, full_text):
 # =========================
 # CONSOLE FILTER
 # =========================
+
+# Modele PSP — tylko oryginalne Sony
+PSP_MODELS = [
+    "psp 1000", "psp 2000", "psp 3000", "psp 3004",
+    "psp go", "psp street", "psp-1000", "psp-2000",
+    "psp-3000", "psp-3004", "pspgo", "psp street",
+    "sony psp", "konsola psp"
+]
+
+# Modele 3DS — wszystkie warianty Nintendo
+DS_MODELS = [
+    "nintendo 3ds", "3ds xl", "3ds ll", "new 3ds",
+    "new 3ds xl", "2ds", "2ds xl", "new 2ds",
+    "nintendo ds", "nintendo dsi", "dsi xl",
+    "konsola 3ds", "konsola ds"
+]
+
+# Modele GameBoy — tylko oryginalne Nintendo
+GB_MODELS = [
+    "game boy", "gameboy", "game boy advance",
+    "gameboy advance", "gba sp", "game boy sp",
+    "gameboy sp", "game boy color", "gameboy color",
+    "gbc", "gba"
+]
+
+# Falszywe / chinskie konsole
+FAKE_CONSOLES = [
+    "powkiddy", "anbernic", "sup game", "gamebox",
+    "r36s", "rg35", "rg353", "fc3000", "fc3000",
+    "miyoo", "trimui", "retroid", "ayaneo",
+    "emulator", "retro console", "handheld console",
+    "psp x", "psp x7", "psp x6", "psp x9",
+    "clone", "klon konsoli"
+]
+
+
 def console_filter(query, title, price, full_text):
+    t = clean(title)
     full = clean(full_text)
     query = query.lower()
 
-    fake_consoles = [
-        "powkiddy", "anbernic", "sup",
-        "gamebox", "r36s", "emulator",
-        "retro console", "handheld console",
-        # chinskie klony PSP
-        "x7", "x7 slim", "x6", "x9",
-        "psp x", "fc3000", "rg35",
-        "1000 gier", "10000 gier", "ponad 1000",
-        # pojedyncze gry / plyty
-        "umd", "littlebigplanet", "gra psp",
-        "gra na psp", "gra do psp"
-    ]
-
-    if any(f in full for f in fake_consoles):
+    # Odrzuc chinskie klony i podrobki
+    if any(f in full for f in FAKE_CONSOLES):
+        return False
+    if any(f in t for f in FAKE_CONSOLES):
         return False
 
-    if is_game(full):
-        if not is_game_bundle(full):
+    # Odrzuc zestawy gier bez konsoli (chyba ze 3+ sztuk)
+    if is_game(t):
+        if not is_game_bundle(t):
             return False
         if price > 150:
             return False
 
     if "psp" in query:
-        return "psp" in full and price <= 200
+        # Konsola musi byc zidentyfikowana w TYTULE
+        has_model = any(m in t for m in PSP_MODELS)
+        # Fallback: "psp" w tytule ale nie sama gra
+        has_psp = "psp" in t
+        return (has_model or has_psp) and price <= 200
 
     if "3ds" in query:
-        return "3ds" in full and price <= 400
+        has_model = any(m in t for m in DS_MODELS)
+        has_ds = "3ds" in t or "nintendo ds" in t
+        return (has_model or has_ds) and price <= 400
 
     if "gameboy" in query:
-        real = [
-            "gameboy", "game boy",
-            "gba", "gameboy advance",
-            "sp"
-        ]
-        return any(r in full for r in real) and price <= 300
+        has_model = any(m in t for m in GB_MODELS)
+        # "sp" samo w sobie za ogolne — wymagamy kontekstu
+        has_gba = (
+            "gameboy" in t or "game boy" in t or
+            "gba" in t or "gbc" in t or
+            ("sp" in t and ("game" in t or "nintendo" in t or "boy" in t))
+        )
+        return (has_model or has_gba) and price <= 300
 
     return False
 
@@ -421,7 +449,7 @@ def allegro_local(query):
 # =========================
 print("🔁 LOOP START")
 
-QUERIES = ["psp", "nintendo 3ds", "gameboy", "pokemon"]
+QUERIES = ["konsola psp", "nintendo 3ds", "konsola gameboy", "pokemon"]
 
 while True:
     try:
