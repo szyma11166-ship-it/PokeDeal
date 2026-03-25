@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.2 START")
+print("🚀 SNIPER V8.3 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -46,7 +46,7 @@ def clean(text):
 
 
 # =========================
-# HELPER
+# HELPERS
 # =========================
 def safe_text(el):
     return el.text.strip() if el else ""
@@ -54,11 +54,20 @@ def safe_text(el):
 
 def olx_title(item):
     """Pobiera tytuł z karty OLX — próbuje kilka selektorów."""
-    for selector in [
-        "h6", "h4", "h3",
-        "[data-cy='ad-card-title']",
-        "a"
-    ]:
+    for selector in ["h6", "h4", "h3", "[data-cy='ad-card-title']", "a"]:
+        el = item.select_one(selector)
+        if el and el.text.strip():
+            return el.text.strip()
+    for line in item.get_text(separator="\n").splitlines():
+        line = line.strip()
+        if len(line) > 5:
+            return line
+    return ""
+
+
+def allegro_title(item):
+    """Pobiera tytuł z karty Allegro Lokalnie — próbuje kilka selektorów."""
+    for selector in ["h2", "h3", "h4", "[class*='title']", "[class*='name']", "a"]:
         el = item.select_one(selector)
         if el and el.text.strip():
             return el.text.strip()
@@ -117,14 +126,20 @@ def is_valid(title, full_text):
         "pudelko", "pudełko", "opakowanie", "box only",
         "samo pudelko", "samo opakowanie", "idealne pudelko",
         "oryginalne opakowanie", "sam box", "karton",
+        # filmy UMD — wszystkie języki
         "umd", "umd movie", "umd film", "film umd", "umd video",
+        "elokuva", "peli", " film", "movie", "žaidimai",
+        # gry pojedyncze
         "gra psp", "gra na psp", "gra do psp",
         "gra 3ds", "gra na 3ds", "gra do 3ds",
         "gra gameboy", "gra gba",
+        # konta i kody
         "konto", "psn", "steam", "kod",
+        # akcesoria
         "kabel", "ladowarka", "charger", "bateria", "akumulator",
         "case", "pokrowiec", "etui", "folia", "szklo",
         "adapter", "dock", "stacja", "uchwyt",
+        # chińskie klony
         "x7", "x7 slim", "x6 slim", "x9",
         "1000 gier", "10000 gier", "ponad 1000 gier",
     ]
@@ -234,7 +249,6 @@ def pokemon_filter(title, price):
         "de ", "fr ", "it ",
         "karta", "karty", "card", "cards",
         "single", "holo", "reverse",
-        # ubrania i zabawki
         "cm /", "mies.", "lat ·", "rozm",
         "bluzk", "koszulk", "spodnie", "bluza", "t-shirt"
     ]
@@ -260,7 +274,6 @@ def pokemon_filter(title, price):
     if "pokemon day" in t or "pokémon day" in t:
         return price <= 120
 
-    # Fallback — tytuł zbyt ogólny, przepuść do AI jeśli cena sensowna
     if len(t.split()) <= 3 and 15 <= price <= 500:
         return True
 
@@ -441,7 +454,7 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
 
             accept, reason = ai_review(title, text, price, img_url)
             print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
-            time.sleep(4)
+            time.sleep(4)  # rate limiting Gemini — 15 req/min
 
             if not accept:
                 continue
@@ -493,7 +506,6 @@ def olx_search(query):
 # VINTED
 # =========================
 def vinted_search(query):
-    # Pomiń Vinted dla pokemon — scraper zwraca złą strukturę
     if query == "pokemon":
         print(f"\n🟣 VINTED: {query} — pominięto (zła struktura HTML)")
         return
@@ -555,7 +567,7 @@ def allegro_local(query):
 
         process_items(
             filtered, query, "ALLEGRO",
-            lambda i: safe_text(i.select_one("h2")),
+            lambda i: allegro_title(i),
             lambda i: ("https://allegrolokalnie.pl" + i.select_one("a")["href"])
                       if i.select_one("a") else None,
             lambda i: i.get_text(),
