@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.3 START")
+print("🚀 SNIPER V8.4 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -53,7 +53,6 @@ def safe_text(el):
 
 
 def olx_title(item):
-    """Pobiera tytuł z karty OLX — próbuje kilka selektorów."""
     for selector in ["h6", "h4", "h3", "[data-cy='ad-card-title']", "a"]:
         el = item.select_one(selector)
         if el and el.text.strip():
@@ -66,7 +65,6 @@ def olx_title(item):
 
 
 def allegro_title(item):
-    """Pobiera tytuł z karty Allegro Lokalnie — próbuje kilka selektorów."""
     for selector in ["h2", "h3", "h4", "[class*='title']", "[class*='name']", "a"]:
         el = item.select_one(selector)
         if el and el.text.strip():
@@ -92,6 +90,11 @@ def get_price(text):
         return None
 
     prices = [float(m.replace(",", ".")) for m in matches]
+    prices = [p for p in prices if p >= 5]
+
+    if not prices:
+        return None
+
     return min(prices)
 
 
@@ -126,20 +129,15 @@ def is_valid(title, full_text):
         "pudelko", "pudełko", "opakowanie", "box only",
         "samo pudelko", "samo opakowanie", "idealne pudelko",
         "oryginalne opakowanie", "sam box", "karton",
-        # filmy UMD — wszystkie języki
         "umd", "umd movie", "umd film", "film umd", "umd video",
         "elokuva", "peli", " film", "movie", "žaidimai",
-        # gry pojedyncze
         "gra psp", "gra na psp", "gra do psp",
         "gra 3ds", "gra na 3ds", "gra do 3ds",
         "gra gameboy", "gra gba",
-        # konta i kody
         "konto", "psn", "steam", "kod",
-        # akcesoria
         "kabel", "ladowarka", "charger", "bateria", "akumulator",
         "case", "pokrowiec", "etui", "folia", "szklo",
         "adapter", "dock", "stacja", "uchwyt",
-        # chińskie klony
         "x7", "x7 slim", "x6 slim", "x9",
         "1000 gier", "10000 gier", "ponad 1000 gier",
     ]
@@ -348,21 +346,33 @@ def ai_review(title, full_text, price, img_url=None):
         }
     }
 
-    try:
-        resp = requests.post(GEMINI_URL, json=payload, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    for attempt in range(3):
+        try:
+            resp = requests.post(GEMINI_URL, json=payload, timeout=15)
 
-        accept = "ACCEPT" in text.upper()
-        reason_match = re.search(r"REASON:\s*(.+)", text, re.IGNORECASE)
-        reason = reason_match.group(1).strip() if reason_match else text[:60]
+            if resp.status_code == 429:
+                wait = 10 * (attempt + 1)  # 10s, 20s, 30s
+                print(f"⏳ 429 rate limit — czekam {wait}s (próba {attempt+1}/3)")
+                time.sleep(wait)
+                continue
 
-        return accept, reason
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-    except Exception as e:
-        print(f"⚠️ AI ERROR: {e} — przepuszczam oferte")
-        return True, "blad AI — przepuszczam"
+            accept = "ACCEPT" in text.upper()
+            reason_match = re.search(r"REASON:\s*(.+)", text, re.IGNORECASE)
+            reason = reason_match.group(1).strip() if reason_match else text[:60]
+
+            return accept, reason
+
+        except Exception as e:
+            print(f"⚠️ AI ERROR: {e}")
+            if attempt == 2:
+                return True, "blad AI — przepuszczam"
+            time.sleep(5)
+
+    return True, "blad AI — przepuszczam"
 
 
 # =========================
@@ -454,7 +464,7 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
 
             accept, reason = ai_review(title, text, price, img_url)
             print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
-            time.sleep(4)  # rate limiting Gemini — 15 req/min
+            time.sleep(4)
 
             if not accept:
                 continue
