@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.0 START")
+print("🚀 SNIPER V8.1 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -50,6 +50,25 @@ def clean(text):
 # =========================
 def safe_text(el):
     return el.text.strip() if el else ""
+
+
+def olx_title(item):
+    """Pobiera tytuł z karty OLX — próbuje kilka selektorów."""
+    for selector in [
+        "h6", "h4", "h3",
+        "[data-cy='ad-card-title']",
+        ".css-1ju露v",  # fallback na klasę
+        "a"
+    ]:
+        el = item.select_one(selector)
+        if el and el.text.strip():
+            return el.text.strip()
+    # ostateczny fallback — pierwsza niepusta linia tekstu karty
+    for line in item.get_text(separator="\n").splitlines():
+        line = line.strip()
+        if len(line) > 5:
+            return line
+    return ""
 
 
 # =========================
@@ -248,7 +267,7 @@ def pokemon_filter(title, price):
 # =========================
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY
+    "gemini-2.0-flash:generateContent?key=" + GEMINI_API_KEY
 )
 
 AI_SYSTEM_PROMPT = """Jestes asystentem do filtrowania ofert z polskich serwisow ogloszenowych.
@@ -387,12 +406,12 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
             img_url = get_img_url(item) if get_img_url else None
 
             price = get_price(text)
-            print(f"  💲 cena: {price} | {title[:40]}")  # DEBUG
+            print(f"  💲 cena: {price} | {title[:40]}")
             if not price:
                 continue
 
             if not is_valid(title, text):
-                print(f"  🚫 is_valid odrzucił: {title[:40]}")  # DEBUG
+                print(f"  🚫 is_valid odrzucił: {title[:40]}")
                 continue
 
             text_clean = clean(text)
@@ -401,7 +420,7 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
                 "tydzien temu", "7 dni temu"
             ]
             if any(o in text_clean for o in old_words):
-                print(f"  ⏰ stara oferta: {title[:40]}")  # DEBUG
+                print(f"  ⏰ stara oferta: {title[:40]}")
                 continue
 
             if query == "pokemon":
@@ -410,7 +429,7 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
                 passes_filter = console_filter(query, title, price, text)
 
             if not passes_filter:
-                print(f"  🔍 filtr konsoli/pokemon odrzucił: {title[:40]}")  # DEBUG
+                print(f"  🔍 filtr konsoli/pokemon odrzucił: {title[:40]}")
                 continue
 
             accept, reason = ai_review(title, text, price, img_url)
@@ -452,7 +471,7 @@ def olx_search(query):
 
         process_items(
             items, query, "OLX",
-            lambda i: safe_text(i.select_one("h6") or i.select_one("h4") or i.select_one("a")),
+            lambda i: olx_title(i),
             lambda i: ("https://www.olx.pl" + i.select_one("a")["href"])
                       if i.select_one("a") and not i.select_one("a")["href"].startswith("http")
                       else (i.select_one("a")["href"] if i.select_one("a") else None),
