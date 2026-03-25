@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.1 START")
+print("🚀 SNIPER V8.2 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -57,13 +57,11 @@ def olx_title(item):
     for selector in [
         "h6", "h4", "h3",
         "[data-cy='ad-card-title']",
-        ".css-1ju露v",  # fallback na klasę
         "a"
     ]:
         el = item.select_one(selector)
         if el and el.text.strip():
             return el.text.strip()
-    # ostateczny fallback — pierwsza niepusta linia tekstu karty
     for line in item.get_text(separator="\n").splitlines():
         line = line.strip()
         if len(line) > 5:
@@ -226,7 +224,7 @@ def console_filter(query, title, price, full_text):
 def pokemon_filter(title, price):
     t = clean(title)
 
-    if "pokemon" not in t:
+    if "pokemon" not in t and "pokémon" not in t:
         return False
 
     banned = [
@@ -235,7 +233,10 @@ def pokemon_filter(title, price):
         "korea", "japanese",
         "de ", "fr ", "it ",
         "karta", "karty", "card", "cards",
-        "single", "holo", "reverse"
+        "single", "holo", "reverse",
+        # ubrania i zabawki
+        "cm /", "mies.", "lat ·", "rozm",
+        "bluzk", "koszulk", "spodnie", "bluza", "t-shirt"
     ]
 
     if any(b in t for b in banned):
@@ -256,8 +257,12 @@ def pokemon_filter(title, price):
     if "first partner" in t:
         return price <= 200
 
-    if "pokemon day" in t or "pokemon day 2026" in t or "day 2025" in t:
+    if "pokemon day" in t or "pokémon day" in t:
         return price <= 120
+
+    # Fallback — tytuł zbyt ogólny, przepuść do AI jeśli cena sensowna
+    if len(t.split()) <= 3 and 15 <= price <= 500:
+        return True
 
     return False
 
@@ -282,6 +287,8 @@ ODRZUC jesli oferta dotyczy:
 - Akcesoriow (kable, ladowarki, etui)
 - Pojedynczych kart Pokemon
 - Kont PSN / Steam / kodow
+- Ubran, zabawek, figurek z motywem Pokemon
+- Ofert bez wyraznie podanego typu produktu TCG
 
 Odpowiedz TYLKO w formacie:
 DECISION: ACCEPT lub REJECT
@@ -486,6 +493,11 @@ def olx_search(query):
 # VINTED
 # =========================
 def vinted_search(query):
+    # Pomiń Vinted dla pokemon — scraper zwraca złą strukturę
+    if query == "pokemon":
+        print(f"\n🟣 VINTED: {query} — pominięto (zła struktura HTML)")
+        return
+
     print(f"\n🟣 VINTED: {query}")
 
     params = {
