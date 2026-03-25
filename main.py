@@ -46,7 +46,7 @@ def clean(text):
 
 
 # =========================
-# HELPER — bezpieczne pobieranie tekstu z elementu
+# HELPER
 # =========================
 def safe_text(el):
     return el.text.strip() if el else ""
@@ -387,10 +387,12 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
             img_url = get_img_url(item) if get_img_url else None
 
             price = get_price(text)
+            print(f"  💲 cena: {price} | {title[:40]}")  # DEBUG
             if not price:
                 continue
 
             if not is_valid(title, text):
+                print(f"  🚫 is_valid odrzucił: {title[:40]}")  # DEBUG
                 continue
 
             text_clean = clean(text)
@@ -399,6 +401,7 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
                 "tydzien temu", "7 dni temu"
             ]
             if any(o in text_clean for o in old_words):
+                print(f"  ⏰ stara oferta: {title[:40]}")  # DEBUG
                 continue
 
             if query == "pokemon":
@@ -407,11 +410,12 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
                 passes_filter = console_filter(query, title, price, text)
 
             if not passes_filter:
+                print(f"  🔍 filtr konsoli/pokemon odrzucił: {title[:40]}")  # DEBUG
                 continue
 
             accept, reason = ai_review(title, text, price, img_url)
             print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
-            time.sleep(1)  # rate limiting Gemini
+            time.sleep(1)
 
             if not accept:
                 continue
