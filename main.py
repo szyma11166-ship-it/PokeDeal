@@ -441,7 +441,7 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
 
             accept, reason = ai_review(title, text, price, img_url)
             print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
-            time.sleep(1)
+            time.sleep(4)
 
             if not accept:
                 continue
