@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.4 START")
+print("🚀 SNIPER V8.5 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -74,6 +74,17 @@ def allegro_title(item):
         if len(line) > 5:
             return line
     return ""
+
+
+def allegro_link(item):
+    """Buduje poprawny link dla Allegro Lokalnie."""
+    a = item.select_one("a")
+    if not a:
+        return None
+    href = a.get("href", "")
+    if href.startswith("http"):
+        return href
+    return "https://allegrolokalnie.pl" + href
 
 
 # =========================
@@ -192,6 +203,17 @@ FAKE_CONSOLES = [
     "clone", "klon konsoli"
 ]
 
+# Pojedyncze tytuły gier PSP — odrzucamy
+PSP_GAME_TITLES = [
+    "yu-gi-oh", "lego star wars", "lord of arcana",
+    "crisis core", "metal gear", "gran turismo",
+    "need for speed", "pro evolution", "pes ",
+    "wipeout", "tekken", "ridge racer",
+    "invizimals", "buzz", "sudoku", "singstar",
+    "buzz master", "go sudoku", "exit ",
+    "medieval", "lumines", "pursuit force",
+]
+
 
 def console_filter(query, title, price, full_text):
     t = clean(title)
@@ -210,6 +232,9 @@ def console_filter(query, title, price, full_text):
             return False
 
     if "psp" in query:
+        # Odrzuc pojedyncze gry PSP po tytule
+        if any(g in t for g in PSP_GAME_TITLES):
+            return False
         has_model = any(m in t for m in PSP_MODELS)
         has_psp = "psp" in t
         return (has_model or has_psp) and price <= 200
@@ -287,23 +312,30 @@ GEMINI_URL = (
 )
 
 AI_SYSTEM_PROMPT = """Jestes asystentem do filtrowania ofert z polskich serwisow ogloszenowych.
-Uzytkownik szuka:
-- Konsol do gier: PSP (oryginalne Sony), Nintendo 3DS/2DS/DS, Game Boy / GBA / GBC (oryginalne Nintendo)
-- Pokemon TCG: boostery, booster bundle, ETB, blistery 3-pack, First Partner, Pokemon Day
+Uzytkownik szuka TYLKO:
+1. Konsol do gier (nie gier!):
+   - PSP oryginalne Sony (PSP-1000/2000/3000/Go/Street)
+   - Nintendo 3DS / 2DS / DS / DSi (wszystkie warianty)
+   - Game Boy / GBA / GBC oryginalne Nintendo
+2. Zestawow konsola + gry (konsola musi byc wymieniona)
+3. Pokemon TCG: boostery, ETB, booster bundle, blistery 3-pack, First Partner, Pokemon Day
 
-ODRZUC jesli oferta dotyczy:
-- Chinskich klonow / podrobek (Anbernic, Powkiddy, PSP X7 itp.)
-- Pojedynczych gier lub filmow UMD
-- Pustych pudelek / opakowan
-- Akcesoriow (kable, ladowarki, etui)
-- Pojedynczych kart Pokemon
-- Kont PSN / Steam / kodow
-- Ubran, zabawek, figurek z motywem Pokemon
-- Ofert bez wyraznie podanego typu produktu TCG
+BEZWZGLEDNIE ODRZUC:
+- Pojedyncze gry (nawet jesli maja PSP/DS w nazwie)
+- Filmy UMD
+- Chinske klony (Anbernic, Powkiddy, R36S itp.)
+- Akcesoria (kable, ladowarki, etui, szkla)
+- Puste pudelka
+- Konta PSN/Steam/kody
+- Pojedyncze karty Pokemon
+- Ubrania, figurki, zabawki z motywem Pokemon
 
-Odpowiedz TYLKO w formacie:
+AKCEPTUJ tylko jesli masz pewnosc ze to konsola lub zestaw z konsola lub produkt TCG Pokemon.
+Przy watpliwosci — ODRZUC.
+
+Odpowiedz TYLKO:
 DECISION: ACCEPT lub REJECT
-REASON: krotkie uzasadnienie po polsku (max 10 slow)"""
+REASON: uzasadnienie po polsku (max 10 slow)"""
 
 
 def fetch_image_base64(img_url):
@@ -351,7 +383,7 @@ def ai_review(title, full_text, price, img_url=None):
             resp = requests.post(GEMINI_URL, json=payload, timeout=15)
 
             if resp.status_code == 429:
-                wait = 10 * (attempt + 1)  # 10s, 20s, 30s
+                wait = 10 * (attempt + 1)
                 print(f"⏳ 429 rate limit — czekam {wait}s (próba {attempt+1}/3)")
                 time.sleep(wait)
                 continue
@@ -369,10 +401,10 @@ def ai_review(title, full_text, price, img_url=None):
         except Exception as e:
             print(f"⚠️ AI ERROR: {e}")
             if attempt == 2:
-                return True, "blad AI — przepuszczam"
+                return False, "blad AI — odrzucam dla bezpieczenstwa"
             time.sleep(5)
 
-    return True, "blad AI — przepuszczam"
+    return False, "blad AI — odrzucam dla bezpieczenstwa"
 
 
 # =========================
@@ -388,11 +420,15 @@ def send(title, price, link, source):
     if not link or "http" not in link:
         return
 
-    if link in sent_links:
+    # Normalizuj link — usun parametry trackoingowe
+    link_clean = link.split("?")[0].rstrip("/")
+
+    if link_clean in sent_links:
+        print(f"  ⏭️ duplikat — pomijam: {title[:40]}")
         return
 
-    sent_links.add(link)
-    save_sent_link(link)
+    sent_links.add(link_clean)
+    save_sent_link(link_clean)
 
     src_emoji = SOURCE_EMOJI.get(source, "📍")
 
@@ -434,6 +470,12 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
             link = get_link(item)
             text = get_full_text(item)
             img_url = get_img_url(item) if get_img_url else None
+
+            # Sprawdz duplikat przed filtrowaniem
+            if link:
+                link_clean = link.split("?")[0].rstrip("/")
+                if link_clean in sent_links:
+                    continue
 
             price = get_price(text)
             print(f"  💲 cena: {price} | {title[:40]}")
@@ -578,8 +620,7 @@ def allegro_local(query):
         process_items(
             filtered, query, "ALLEGRO",
             lambda i: allegro_title(i),
-            lambda i: ("https://allegrolokalnie.pl" + i.select_one("a")["href"])
-                      if i.select_one("a") else None,
+            lambda i: allegro_link(i),
             lambda i: i.get_text(),
             get_img
         )
