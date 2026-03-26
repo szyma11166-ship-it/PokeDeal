@@ -18,26 +18,26 @@ CHAT_ID = "-1003743099672"
 GEMINI_API_KEY = "AIzaSyCBRzBU3IE6-Gt3mAHDQwlhpJ1WwHbpdZE"
 
 HEADERS = {
-“User-Agent”: (
-“Mozilla/5.0 (Windows NT 10.0; Win64; x64) “
-“AppleWebKit/537.36 (KHTML, like Gecko) “
-“Chrome/124.0.0.0 Safari/537.36”
+"User-Agent”: (
+"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+"AppleWebKit/537.36 (KHTML, like Gecko) "
+"Chrome/124.0.0.0 Safari/537.36”
 ),
-“Accept”: “text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8”,
-“Accept-Language”: “pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7”,
-“Accept-Encoding”: “gzip, deflate, br”,
-“Connection”: “keep-alive”,
-“Upgrade-Insecure-Requests”: “1”,
-“Cache-Control”: “max-age=0”,
+"Accept”: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8”,
+"Accept-Language”: "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7”,
+"Accept-Encoding”: "gzip, deflate, br”,
+"Connection”: "keep-alive”,
+"Upgrade-Insecure-Requests”: "1”,
+"Cache-Control”: "max-age=0”,
 }
 
-print(“🚀 SNIPER V9.0 START”)
+print("🚀 SNIPER V9.0 START”)
 
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 
-SENT_FILE = “sent_links.txt”
-AI_CACHE_FILE = “ai_cache.json”  # NOWE: cache decyzji AI
+SENT_FILE = "sent_links.txt”
+AI_CACHE_FILE = "ai_cache.json”  # NOWE: cache decyzji AI
 
 # =========================
 
@@ -48,34 +48,34 @@ AI_CACHE_FILE = “ai_cache.json”  # NOWE: cache decyzji AI
 def load_sent_links():
 if not os.path.exists(SENT_FILE):
 return set()
-with open(SENT_FILE, “r”) as f:
+with open(SENT_FILE, "r”) as f:
 return set(line.strip() for line in f if line.strip())
 
 def save_sent_link(link):
-with open(SENT_FILE, “a”) as f:
-f.write(link + “\n”)
+with open(SENT_FILE, "a”) as f:
+f.write(link + "\n”)
 
 def load_ai_cache():
-“”“Wczytaj cache decyzji AI z pliku JSON.”””
+"”"Wczytaj cache decyzji AI z pliku JSON.”””
 if not os.path.exists(AI_CACHE_FILE):
 return {}
 try:
-with open(AI_CACHE_FILE, “r”, encoding=“utf-8”) as f:
+with open(AI_CACHE_FILE, "r”, encoding="utf-8”) as f:
 return json.load(f)
 except Exception:
 return {}
 
 def save_ai_cache(cache):
-“”“Zapisz cache decyzji AI do pliku JSON.”””
+"”"Zapisz cache decyzji AI do pliku JSON.”””
 try:
-with open(AI_CACHE_FILE, “w”, encoding=“utf-8”) as f:
+with open(AI_CACHE_FILE, "w”, encoding="utf-8”) as f:
 json.dump(cache, f, ensure_ascii=False, indent=2)
 except Exception as e:
 print(f”⚠️ Błąd zapisu cache AI: {e}”)
 
 def make_cache_key(title, price):
-“”“Klucz cache na podstawie tytułu + przedziału cenowego (nie dokładnej ceny).”””
-t = re.sub(r”\s+”, “ “, title).strip().lower()
+"”"Klucz cache na podstawie tytułu + przedziału cenowego (nie dokładnej ceny).”””
+t = re.sub(r”\s+”, " ", title).strip().lower()
 # Zaokrąglamy cenę do przedziałów po 20zł, żeby np. 89 i 91zł trafiały w ten sam bucket
 price_bucket = int(price // 20) * 20
 return f”{t}|{price_bucket}”
@@ -90,13 +90,13 @@ ai_cache = load_ai_cache()
 # =========================
 
 def clean(text):
-return re.sub(r”\s+”, “ “, text).strip().lower()
+return re.sub(r”\s+”, " ", text).strip().lower()
 
 def safe_text(el):
-return el.text.strip() if el else “”
+return el.text.strip() if el else "”
 
 def olx_title(item):
-for selector in [“h6”, “h4”, “h3”, “[data-cy=‘ad-card-title’]”, “a”]:
+for selector in ["h6”, "h4”, "h3”, "[data-cy=‘ad-card-title’]”, "a”]:
 el = item.select_one(selector)
 if el and el.text.strip():
 return el.text.strip()
@@ -104,10 +104,10 @@ for line in item.get_text(separator=”\n”).splitlines():
 line = line.strip()
 if len(line) > 5:
 return line
-return “”
+return "”
 
 def allegro_title(item):
-for selector in [“h2”, “h3”, “h4”, “[class*=‘title’]”, “[class*=‘name’]”, “a”]:
+for selector in ["h2”, "h3”, "h4”, "[class*=‘title’]”, "[class*=‘name’]”, "a”]:
 el = item.select_one(selector)
 if el and el.text.strip():
 return el.text.strip()
@@ -115,16 +115,16 @@ for line in item.get_text(separator=”\n”).splitlines():
 line = line.strip()
 if len(line) > 5:
 return line
-return “”
+return "”
 
 def allegro_link(item):
-a = item.select_one(“a”)
+a = item.select_one("a”)
 if not a:
 return None
-href = a.get(“href”, “”)
-if href.startswith(“http”):
+href = a.get("href”, "”)
+if href.startswith("http”):
 return href
-return “https://allegrolokalnie.pl” + href
+return "https://allegrolokalnie.pl” + href
 
 # =========================
 
@@ -134,12 +134,12 @@ return “https://allegrolokalnie.pl” + href
 
 def get_price(text):
 text = text.lower()
-text = re.sub(r”\d+\s*gb”, “”, text)
-text = re.sub(r”\d+%”, “”, text)
+text = re.sub(r”\d+\s*gb”, "”, text)
+text = re.sub(r”\d+%”, "”, text)
 matches = re.findall(r”(\d{1,5}(?:[.,]\d{1,2})?)\s*zł”, text)
 if not matches:
 return None
-prices = [float(m.replace(”,”, “.”)) for m in matches]
+prices = [float(m.replace(”,”, ".”)) for m in matches]
 prices = [p for p in prices if p >= 5]
 if not prices:
 return None
@@ -154,10 +154,10 @@ return min(prices)
 def is_game(text):
 t = clean(text)
 game_words = [
-“gra “, “gry “, “ game”, “ games”,
-“fifa”, “lego “, “mario “, “zelda “,
-“littlebigplanet”, “god of war”, “monster hunter”,
-“crisis core”, “final fantasy”, “metal gear”
+"gra ", "gry ", " game”, " games”,
+"fifa”, "lego ", "mario ", "zelda ",
+"littlebigplanet”, "god of war”, "monster hunter”,
+"crisis core”, "final fantasy”, "metal gear”
 ]
 return any(g in t for g in game_words)
 
@@ -219,88 +219,88 @@ return True
 # =========================
 
 PSP_MODELS = [
-“psp 1000”, “psp 2000”, “psp 3000”, “psp 3004”,
-“psp go”, “psp street”, “psp slim”, “psp-1000”,
-“psp-2000”, “psp-3000”, “psp-3004”, “pspgo”,
-“sony psp”, “konsola psp”
+"psp 1000”, "psp 2000”, "psp 3000”, "psp 3004”,
+"psp go”, "psp street”, "psp slim”, "psp-1000”,
+"psp-2000”, "psp-3000”, "psp-3004”, "pspgo”,
+"sony psp”, "konsola psp”
 ]
 
 DS_MODELS = [
-“nintendo 3ds”, “3ds xl”, “3ds ll”, “new 3ds”,
-“new 3ds xl”, “2ds”, “2ds xl”, “new 2ds”,
-“nintendo ds”, “nintendo dsi”, “dsi xl”,
-“konsola 3ds”, “konsola ds”
+"nintendo 3ds”, "3ds xl”, "3ds ll”, "new 3ds”,
+"new 3ds xl”, "2ds”, "2ds xl”, "new 2ds”,
+"nintendo ds”, "nintendo dsi”, "dsi xl”,
+"konsola 3ds”, "konsola ds”
 ]
 
 GB_MODELS = [
-“game boy”, “gameboy”, “game boy advance”,
-“gameboy advance”, “gba sp”, “game boy sp”,
-“gameboy sp”, “game boy color”, “gameboy color”,
-“gbc”, “gba”
+"game boy”, "gameboy”, "game boy advance”,
+"gameboy advance”, "gba sp”, "game boy sp”,
+"gameboy sp”, "game boy color”, "gameboy color”,
+"gbc”, "gba”
 ]
 
 FAKE_CONSOLES = [
-“powkiddy”, “anbernic”, “sup game”, “gamebox”,
-“r36s”, “rg35”, “rg353”, “fc3000”,
-“miyoo”, “trimui”, “retroid”, “ayaneo”,
-“emulator”, “retro console”, “handheld console”,
-“psp x”, “psp x7”, “psp x6”, “psp x9”,
-“clone”, “klon konsoli”
+"powkiddy”, "anbernic”, "sup game”, "gamebox”,
+"r36s”, "rg35”, "rg353”, "fc3000”,
+"miyoo”, "trimui”, "retroid”, "ayaneo”,
+"emulator”, "retro console”, "handheld console”,
+"psp x”, "psp x7”, "psp x6”, "psp x9”,
+"clone”, "klon konsoli”
 ]
 
 PSP_GAME_TITLES = [
-“yu-gi-oh”, “lego star wars”, “lord of arcana”,
-“crisis core”, “metal gear”, “gran turismo”,
-“need for speed”, “pro evolution”, “pes “,
-“wipeout”, “tekken”, “ridge racer”,
-“invizimals”, “buzz”, “sudoku”, “singstar”,
-“buzz master”, “go sudoku”, “exit “,
-“medieval”, “lumines”, “pursuit force”,
-“burnout”, “colin mcrae”, “dirt “,
-“flatout”, “smackdown”, “nba “, “nfl “,
-“fight night”, “mortal kombat”, “street fighter”,
-“god of war”, “gta “, “grand theft”,
-“resistance”, “killzone”, “medal of honor”,
-“call of duty”, “battlefield”, “tomb raider”,
-“avatar”, “daxter”, “everybody’s golf”, “ben 10”,
-“little big planet”, “littlebigplanet”,
-“fifa”, “nba 2k”, “ufc”,
+"yu-gi-oh”, "lego star wars”, "lord of arcana”,
+"crisis core”, "metal gear”, "gran turismo”,
+"need for speed”, "pro evolution”, "pes ",
+"wipeout”, "tekken”, "ridge racer”,
+"invizimals”, "buzz”, "sudoku”, "singstar”,
+"buzz master”, "go sudoku”, "exit ",
+"medieval”, "lumines”, "pursuit force”,
+"burnout”, "colin mcrae”, "dirt ",
+"flatout”, "smackdown”, "nba ", "nfl ",
+"fight night”, "mortal kombat”, "street fighter”,
+"god of war”, "gta ", "grand theft”,
+"resistance”, "killzone”, "medal of honor”,
+"call of duty”, "battlefield”, "tomb raider”,
+"avatar”, "daxter”, "everybody’s golf”, "ben 10”,
+"little big planet”, "littlebigplanet”,
+"fifa”, "nba 2k”, "ufc”,
 ]
 
 DS_GAME_TITLES = [
-“mario kart”, “mario bros”, “super mario”,
-“zelda”, “pokemon mystery”, “luigi mansion”,
-“animal crossing”, “professor layton”,
-“super smash”, “rayman”, “disney infinity”,
-“hello kitty”, “lego jurassic”, “lego star”,
-“new zealand story”, “yo-kai watch”,
-“mario sonic”, “pes 20”, “zoo resort”,
-“transformers”, “kirby”, “sonic “,
-“inazuma”, “dragon quest”, “final fantasy”,
-“harvest moon”, “rune factory”, “shin megami”,
-“ace attorney”, “rhythm heaven”, “picross”,
-“brain age”, “nintendogs”, “brain training”,
-“scribblenauts”, “cooking mama”, “doa “,
-“star fox”, “donkey kong”, “metroid”,
-“disney”, “kung fu”, “naruto”,
-“big hero”, “tintin”, “ravenhearst”, “hamsterz”,
-“puzzle master”, “mystery stories”, “joc nintendo”,
-“paket med”, “sonic lost”, “paper mario”,
-“lego movie”, “lego hobbit”, “lego batman”,
-“return to”, “adventures of”, “super mario maker”,
-“mario sticker”, “lego the”, “tinker bell”,
-“winx”, “barbie”, “bratz”, “my little pony”,
-“monster hunter”, “need for speed”,
-“metal gear solid”, “mystery case”,
+"mario kart”, "mario bros”, "super mario”,
+"zelda”, "pokemon mystery”, "luigi mansion”,
+"animal crossing”, "professor layton”,
+"super smash”, "rayman”, "disney infinity”,
+"hello kitty”, "lego jurassic”, "lego star”,
+"new zealand story”, "yo-kai watch”,
+"mario sonic”, "pes 20”, "zoo resort”,
+"transformers”, "kirby”, "sonic ",
+"inazuma”, "dragon quest”, "final fantasy”,
+"harvest moon”, "rune factory”, "shin megami”,
+"ace attorney”, "rhythm heaven”, "picross”,
+"brain age”, "nintendogs”, "brain training”,
+"scribblenauts”, "cooking mama”, "doa ",
+"star fox”, "donkey kong”, "metroid”,
+"disney”, "kung fu”, "naruto”,
+"big hero”, "tintin”, "ravenhearst”, "hamsterz”,
+"puzzle master”, "mystery stories”, "joc nintendo”,
+"paket med”, "sonic lost”, "paper mario”,
+"lego movie”, "lego hobbit”, "lego batman”,
+"return to”, "adventures of”, "super mario maker”,
+"mario sticker”, "lego the”, "tinker bell”,
+"winx”, "barbie”, "bratz”, "my little pony”,
+"monster hunter”, "need for speed”,
+"metal gear solid”, "mystery case”,
 ]
 
 GB_GAME_TITLES = [
-“pokemon red”, “pokemon blue”, “pokemon yellow”,
-“pokemon gold”, “pokemon silver”, “pokemon crystal”,
-“tetris”, “super mario land”, “metroid”,
-“zelda”, “donkey kong”, “kirby”, “wario”,
-“mega man”, “castlevania”, “contra”,
-“final fantasy”, “dragon warrior”,
+"pokemon red”, "pokemon blue”, "pokemon yellow”,
+"pokemon gold”, "pokemon silver”, "pokemon crystal”,
+"tetris”, "super mario land”, "metroid”,
+"zelda”, "donkey kong”, "kirby”, "wario”,
+"mega man”, "castlevania”, "contra”,
+"final fantasy”, "dragon warrior”,
 ]
 
 def console_filter(query, title, price, full_text):
@@ -408,12 +408,12 @@ return False
 # =========================
 
 def is_uncertain(title, query):
-“””
+"””
 AI jest OSTATECZNOŚCIĄ — wywołuj tylko gdy:
 1. Żaden znany model konsoli nie pasuje do tytułu
 2. Tytuł nie zawiera słów jednoznacznie go klasyfikujących
 Jeśli filtr przepuścił i mamy pewność — nie wołaj AI.
-“””
+"””
 t = clean(title)
 
 ```
@@ -453,11 +453,11 @@ return False
 # =========================
 
 GEMINI_URL = (
-“https://generativelanguage.googleapis.com/v1beta/models/”
-“gemini-2.0-flash:generateContent?key=” + GEMINI_API_KEY
+"https://generativelanguage.googleapis.com/v1beta/models/”
+"gemini-2.0-flash:generateContent?key=” + GEMINI_API_KEY
 )
 
-AI_SYSTEM_PROMPT = “”“Jestes asystentem do filtrowania ofert z polskich serwisow ogloszenowych.
+AI_SYSTEM_PROMPT = "”"Jestes asystentem do filtrowania ofert z polskich serwisow ogloszenowych.
 Uzytkownik szuka TYLKO:
 
 1. Konsol do gier (nie gier!):
@@ -490,19 +490,19 @@ def fetch_image_base64(img_url):
 try:
 r = SESSION.get(img_url, timeout=8)
 if r.status_code == 200:
-return base64.b64encode(r.content).decode(“utf-8”), r.headers.get(“content-type”, “image/jpeg”)
+return base64.b64encode(r.content).decode("utf-8”), r.headers.get("content-type”, "image/jpeg”)
 except Exception:
 pass
 return None, None
 
 def ai_review(title, full_text, price, img_url=None):
-“””
+"””
 Wywołaj Gemini AI. Używaj TYLKO gdy is_uncertain() zwróci True.
 Wyniki są cache’owane — ta sama oferta nie będzie analizowana dwa razy.
 Exponential backoff przy 429.
-“””
+"””
 if not GEMINI_API_KEY:
-return False, “brak klucza AI — odrzucam”
+return False, "brak klucza AI — odrzucam”
 
 ```
 # --- CACHE CHECK ---
@@ -583,13 +583,13 @@ return None, "blad AI — pomijam"
 # =========================
 
 SOURCE_EMOJI = {
-“OLX”: “🟢”,
-“VINTED”: “🟣”,
-“ALLEGRO”: “🟠”
+"OLX”: "🟢”,
+"VINTED”: "🟣”,
+"ALLEGRO”: "🟠”
 }
 
 def send(title, price, link, source):
-if not link or “http” not in link:
+if not link or "http” not in link:
 return
 
 ```
@@ -711,7 +711,7 @@ for item in items:
 ```
 
 def process_ai_queue():
-“”“Przetwórz oferty czekające na AI (np. po rate limicie).”””
+"”"Przetwórz oferty czekające na AI (np. po rate limicie).”””
 if not ai_pending_queue:
 return
 
@@ -841,8 +841,8 @@ except Exception as e:
 ```
 
 def olx_search_html(query):
-“”“Fallback HTML scraping dla OLX.”””
-query_url = query.replace(” “, “-”)
+"”"Fallback HTML scraping dla OLX.”””
+query_url = query.replace(” ", "-”)
 url = (
 f”https://www.olx.pl/oferty/q-{query_url}/”
 f”?search%5Border%5D=created_at:desc&_={random.randint(1, 9999999)}”
@@ -880,7 +880,7 @@ except Exception as e:
 # =========================
 
 def vinted_search(query):
-if query == “pokemon”:
+if query == "pokemon”:
 print(f”\n🟣 VINTED: {query} — pominięto (zła struktura HTML)”)
 return
 
@@ -960,9 +960,9 @@ except Exception as e:
 
 # =========================
 
-print(“🔁 LOOP START”)
+print("🔁 LOOP START”)
 
-QUERIES = [“konsola psp”, “nintendo 3ds”, “konsola gameboy”, “pokemon”]
+QUERIES = ["konsola psp”, "nintendo 3ds”, "konsola gameboy”, "pokemon”]
 
 while True:
 try:
