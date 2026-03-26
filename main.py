@@ -14,19 +14,57 @@ GEMINI_API_KEY = "AIzaSyCBRzBU3IE6-Gt3mAHDQwlhpJ1WwHbpdZE"
 SENT_FILE = "sent_links.txt"
 HISTORY_FILE = "price_history.json"
 
-# --- LOGIKA KATEGORII I TRENDÓW ---
+# --- RYGORYSTYCZNA LOGIKA FILTROWANIA ---
 def identify_category(title):
     t = title.lower()
-    if any(x in t for x in ["gameboy", "gba", "gbc"]): return "GAMEBOY"
-    if "psp" in t: return "PSP"
+    if any(x in t for x in ["gameboy", "gba", "gbc", "advance", "dmg"]): return "GAMEBOY"
+    if "psp" in t or "playstation portable" in t: return "PSP"
     if any(x in t for x in ["3ds", "2ds", "dsi"]): return "3DS_FAMILY"
     if "booster bundle" in t: return "POKEMON_BUNDLE"
     if any(x in t for x in ["illustration", "partner"]): return "POKEMON_ILLUST"
     if any(x in t for x in ["day 2026", "pokemon day"]): return "POKEMON_DAY"
-    return "OTHER"
+    return None
 
+def is_valid(title, text, price):
+    if not price or price <= 5 or price > 500: return False
+    
+    t_f = (title + " " + text).lower()
+    
+    # 1. CZARNA LISTA (Akcesoria, śmieci, inne konsole)
+    trash = [
+        "switch", "lite", "oled", "v1", "v2", "wii", "balance board", "fit", "move",
+        "pegasus", "famicom", "nes", "snes", "n64", "gamecube", "retro g2", "g28", 
+        "szkło", "glass", "folia", "etui", "case", "pokrowiec", "uchwyt", "grip",
+        "r36s", "anbernic", "powkiddy", "miyoo", "sf2000", "pudełko", "box", "instrukcja",
+        "manual", "kabel", "hdmi", "zasilacz", "adapter", "części", "uszkodzone", "nietestowane"
+    ]
+    if any(b in t_f for b in trash): return False
+
+    # 2. BIAŁA LISTA (Weryfikacja czy to na pewno konsola/produkt TCG)
+    cat = identify_category(title)
+    if not cat: return False # Odrzuca wszystko, co nie pasuje do kategorii
+
+    whitelist = {
+        "GAMEBOY": ["gameboy", "game boy", "gba", "gbc", "dmg", "advance", "sp"],
+        "PSP": ["psp", "1004", "2004", "3004", "go", "e1004", "street"],
+        "3DS_FAMILY": ["3ds", "2ds", "new 3ds", "new 2ds", "xl", "ll"],
+        "POKEMON_BUNDLE": ["booster bundle", "bundle"],
+        "POKEMON_ILLUST": ["illustration", "partner"],
+        "POKEMON_DAY": ["day 2026", "pokemon day"]
+    }
+    
+    if not any(w in t_f for w in whitelist.get(cat, [])): return False
+
+    # 3. SZTYWNE LIMITY CENOWE
+    limits = {
+        "GAMEBOY": 300, "PSP": 250, "3DS_FAMILY": 450, 
+        "POKEMON_BUNDLE": 150, "POKEMON_ILLUST": 150, "POKEMON_DAY": 80
+    }
+    
+    return price <= limits.get(cat, 0)
+
+# --- SYSTEM TRENDÓW ---
 def update_trends(title, price):
-    if not price or price <= 0: return
     cat = identify_category(title)
     history = {}
     if os.path.exists(HISTORY_FILE):
@@ -35,7 +73,7 @@ def update_trends(title, price):
         except: history = {}
     if cat not in history: history[cat] = []
     history[cat].append({"p": price, "d": datetime.now().strftime("%Y-%m-%d")})
-    history[cat] = history[cat][-50:]
+    history[cat] = history[cat][-30:]
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
@@ -49,38 +87,9 @@ def get_avg_price(title):
             return sum(prices) / len(prices) if prices else 0
     except: return 0
 
-# --- FILTRY I VISION AI ---
-def is_valid(title, text, price):
-    # BLOKADA: Jeśli cena jest zerowa, ujemna lub None - odrzuć (STOP SPAM)
-    if not price or price <= 0: return False
-    
-    t_f = (title + " " + text).lower()
-    if price > 500: return False # Hard cap 500 PLN
-    
-    # Blokada śmieci
-    if any(b in t_f for b in ["r36s", "anbernic", "powkiddy", "etui", "r4", "ładowarka", "case"]): return False
-    
-    cat = identify_category(title)
-    limits = {
-        "GAMEBOY": 300, "PSP": 250, "3DS_FAMILY": 450, 
-        "POKEMON_BUNDLE": 150, "POKEMON_ILLUST": 150, "POKEMON_DAY": 80
-    }
-    
-    # Sprawdzenie sztywnego limitu dla kategorii
-    return price <= limits.get(cat, 500)
-
-def analyze_visuals(title, img_url):
-    if not img_url or not GEMINI_API_KEY: return True
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    prompt = f"Produkt: {title}. Czy urządzenie na foto {img_url} wydaje się sprawne/kompletne? Odpowiedz: OK lub REJECT."
-    try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
-        return "REJECT" not in r.json()['candidates'][0]['content']['parts'][0]['text'].upper()
-    except: return True
-
-# --- SCRAPER ---
+# --- SCRAPER SILNIK ---
 def scrape(source, query):
-    headers = {"User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/{random.randint(110,126)}.0.0.0"}
+    headers = {"User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/{random.randint(115,126)}.0.0.0"}
     items = []
     try:
         if source == "OLX":
@@ -88,9 +97,7 @@ def scrape(source, query):
             for o in r.json().get('data', []):
                 p_raw = o.get('price', {}).get('value', {}).get('amount') or o.get('price', {}).get('amount')
                 if p_raw:
-                    price = float(p_raw)
-                    img = o.get('photos', [{}])[0].get('link', '').replace('{width}', '600')
-                    items.append((o.get('title'), o.get('url'), price, o.get('description', ''), img))
+                    items.append((o.get('title'), o.get('url'), float(p_raw), o.get('description', "")))
         
         elif source == "VINTED":
             s = requests.Session()
@@ -100,54 +107,53 @@ def scrape(source, query):
             for card in soup.find_all("div", {"data-testid": re.compile(r"grid-item")}):
                 txt = card.get_text(separator=" ").replace('\xa0', ' ')
                 p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
-                if p_match:
+                link_tag = card.find("a", href=True)
+                if p_match and link_tag:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                    link_tag = card.find("a", href=True)
-                    if link_tag:
-                        url = link_tag['href'] if "http" in link_tag['href'] else "https://www.vinted.pl" + link_tag['href']
-                        img = card.find("img")['src'] if card.find("img") else ""
-                        items.append((link_tag.get("title", "Okazja"), url, price, "Vinted Item", img))
+                    url = link_tag['href'] if "http" in link_tag['href'] else "https://www.vinted.pl" + link_tag['href']
+                    items.append((link_tag.get("title") or "Okazja", url, price, ""))
 
-        for title, link, price, text, img in items:
+        for title, link, price, text in items:
             clean_link = link.split("?")[0].rstrip("/")
             if clean_link in sent_links: continue
             
-            # Walidacja ceny i limitów (Tylko konkretne kwoty przechodzą)
-            if not is_valid(title, text, price): continue
-            
-            # Vision AI dla podejrzanych opisów
-            if any(x in (title + text).lower() for x in ["uszkodz", "nietest", "brak"]):
-                if not analyze_visuals(title, img): continue
+            if is_valid(title, text, price):
+                avg = get_avg_price(title)
+                update_trends(title, price)
+                
+                msg = (
+                    f"🎯 *NOWA OKAZJA {source}*\n━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📦 *{title[:70]}*\n"
+                    f"💰 Cena: `{price:.2f} zł` (Śr: {avg:.0f} zł)\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n🔗 [KUP TERAZ]({clean_link})"
+                )
+                requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                             data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+                sent_links.add(clean_link)
+                with open(SENT_FILE, "a") as f: f.write(clean_link + "\n")
 
-            avg = get_avg_price(title)
-            update_trends(title, price)
-            
-            total = price + (15 if source != "VINTED" else 18)
-            trend_info = f"\n📉 Śr. rynkowa: {avg:.0f} zł" if avg > 0 else ""
+    except Exception as e:
+        print(f"⚠️ Błąd {source}: {e}")
 
-            msg = (
-                f"🎯 *OKAZJA {source}*\n━━━━━━━━━━━━━━━━━━━━\n"
-                f"📦 *{title[:75]}*\n\n"
-                f"💰 Cena: `{price:.2f} zł`\n"
-                f"🚚 Razem: ~`{total:.2f} zł`{trend_info}\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n🔗 [OTWÓRZ OFERTĘ]({clean_link})"
-            )
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-            sent_links.add(clean_link)
-            with open(SENT_FILE, "a") as f: f.write(clean_link + "\n")
-
-    except Exception as e: print(f"⚠️ Błąd {source}: {e}")
-
-# --- START ---
+# --- URUCHOMIENIE ---
 if __name__ == "__main__":
     if not os.path.exists(SENT_FILE): open(SENT_FILE, 'w').close()
     sent_links = set(open(SENT_FILE).read().split())
-    QUERIES = ["gameboy konsola", "psp zestaw", "nintendo 3ds", "pokemon booster bundle", "pokemon first partner illustration", "pokemon day 2026"]
     
-    print(f"🚀 SNIPER V10.6 ONLINE | CZYSZCZENIE SPAMU AKTYWNE")
+    # Precyzyjne zapytania z wykluczeniami na poziomie portalu
+    QUERIES = [
+        "gameboy -switch -wii -szkło -etui",
+        "psp konsola -szkło -etui -ładowarka",
+        "nintendo 3ds -switch -wii -2ds",
+        "booster bundle pokemon",
+        "illustration collection pokemon",
+        "pokemon day 2026"
+    ]
+    
+    print(f"🚀 SNIPER V10.7 ACTIVE | CLEAN MODE")
     while True:
         for q in QUERIES:
             for src in ["OLX", "VINTED"]:
                 scrape(src, q)
-                time.sleep(random.randint(20, 40))
+                time.sleep(random.randint(15, 30))
         time.sleep(60)
