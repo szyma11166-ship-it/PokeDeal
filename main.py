@@ -595,6 +595,8 @@ def olx_search(query):
 
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
+        print(f"  📡 status: {r.status_code}")
+        print(f"  📄 html fragment: {r.text[2000:2500]}")  # fragment HTML
         soup = BeautifulSoup(r.text, "html.parser")
         items = soup.select("div[data-cy='l-card']")
         print(f"📦 {len(items)} ofert")
