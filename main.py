@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.6 START")
+print("🚀 SNIPER V8.7 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -225,6 +225,13 @@ DS_GAME_TITLES = [
     "scribblenauts", "cooking mama", "doa ",
     "star fox", "donkey kong", "metroid",
     "disney", "kung fu", "naruto",
+    "big hero", "tintin", "ravenhearst", "hamsterz",
+    "puzzle master", "mystery stories", "joc nintendo",
+    "paket med", "sonic lost", "paper mario",
+    "lego movie", "lego hobbit", "lego batman",
+    "return to", "adventures of", "super mario maker",
+    "mario sticker", "lego the", "tinker bell",
+    "winx", "barbie", "bratz", "my little pony",
 ]
 
 GB_GAME_TITLES = [
@@ -326,6 +333,29 @@ def pokemon_filter(title, price):
 
     if len(t.split()) <= 3 and 15 <= price <= 500:
         return True
+
+    return False
+
+
+# =========================
+# IS UNCERTAIN — wywołaj AI tylko dla niejednoznacznych
+# =========================
+def is_uncertain(title, query):
+    t = clean(title)
+
+    if query == "pokemon":
+        tcg_words = ["booster", "etb", "blister", "bundle", "trainer box",
+                     "first partner", "pokemon day"]
+        return not any(w in t for w in tcg_words)
+
+    if "psp" in query:
+        return not any(m in t for m in PSP_MODELS)
+
+    if "3ds" in query:
+        return not any(m in t for m in DS_MODELS)
+
+    if "gameboy" in query:
+        return not any(m in t for m in GB_MODELS)
 
     return False
 
@@ -530,12 +560,15 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
                 print(f"  🔍 filtr konsoli/pokemon odrzucił: {title[:40]}")
                 continue
 
-            accept, reason = ai_review(title, text, price, img_url)
-            print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
-            time.sleep(4)
-
-            if not accept:
-                continue
+            # AI tylko dla niejednoznacznych ofert
+            if is_uncertain(title, query):
+                accept, reason = ai_review(title, text, price, img_url)
+                print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
+                time.sleep(4)
+                if not accept:
+                    continue
+            else:
+                print(f"  ✅ pewna oferta — pomijam AI | {title[:50]}")
 
             send(title, price, link, source)
             count += 1
