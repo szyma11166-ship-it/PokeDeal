@@ -20,7 +20,7 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Acceppt": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
@@ -609,11 +609,11 @@ def olx_search(query):
     )
 
     try:
+        
         r = SESSION.get(url, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        items = soup.select("div[data-cy='l-card']")
-        print(f"📦 {len(items)} ofert")
+print(f"  📡 OLX status: {r.status_code} | dlugosc: {len(r.text)}")
 
+        
         def get_img(i):
             img = i.select_one("img")
             return img["src"] if img and img.get("src") else None
