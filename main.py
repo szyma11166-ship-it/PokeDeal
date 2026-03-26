@@ -9,10 +9,10 @@ import base64
 # =========================
 # CONFIG — wpisz swoje wartości
 # =========================
+
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 GEMINI_API_KEY = "AIzaSyCBRzBU3IE6-Gt3mAHDQwlhpJ1WwHbpdZE"
-
 
 HEADERS = {
     "User-Agent": (
@@ -20,7 +20,7 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Acceppt": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
@@ -34,7 +34,6 @@ HEADERS = {
 
 print("🚀 SNIPER V8.8 START")
 
-# Globalna sesja HTTP
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 
@@ -609,11 +608,12 @@ def olx_search(query):
     )
 
     try:
-        
         r = SESSION.get(url, timeout=10)
-print(f"  📡 OLX status: {r.status_code} | dlugosc: {len(r.text)}")
+        print(f"  📡 OLX status: {r.status_code} | dlugosc: {len(r.text)}")
+        soup = BeautifulSoup(r.text, "html.parser")
+        items = soup.select("div[data-cy='l-card']")
+        print(f"📦 {len(items)} ofert")
 
-        
         def get_img(i):
             img = i.select_one("img")
             return img["src"] if img and img.get("src") else None
