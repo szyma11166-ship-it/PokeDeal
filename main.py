@@ -47,7 +47,7 @@ def save_ai_cache(cache):
     try:
         with open(AI_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, indent=2)
-    except Exception as e: print(f"⚠️ Cache error: {e}")
+    except Exception as e: print(f"⚠️ Błąd cache AI: {e}")
 
 sent_links = load_sent_links()
 ai_cache = load_ai_cache()
@@ -57,6 +57,7 @@ def clean(text):
 
 def get_price(text):
     text = text.lower()
+    text = re.sub(r"\d+\s*gb", "", text)
     matches = re.findall(r"(\d{1,5}(?:[.,]\d{1,2})?)\s*zł", text)
     if not matches: return None
     try:
@@ -69,96 +70,142 @@ def get_price(text):
 # =========================
 def is_valid(title, full_text):
     t, f = clean(title), clean(full_text)
-    banned = ["pudełko", "box only", "samo opakowanie", "etui", "ładowarka", "kabel", "uszkodz", "części"]
+    banned = ["pudełko", "box only", "samo opakowanie", "etui", "ładowarka", "kabel", "uszkodz", "części", "niedziała"]
     if any(b in t for b in banned): return False
-    if "uszkodz" in f or "nie działa" in f: return False
+    if any(b in f for b in ["uszkodzone", "na części", "replacement", "zamiennik"]): return False
     return True
 
 def console_filter(query, title, price, text):
     t = clean(title)
-    if "psp" in query and "psp" in t: return price <= 250
-    if "3ds" in query and ("3ds" in t or "2ds" in t): return price <= 450
-    if "gameboy" in query and ("gameboy" in t or "gba" in t): return price <= 350
+    q = query.lower()
+    if "psp" in q: return ("psp" in t) and price <= 250
+    if "3ds" in q: return ("3ds" in t or "2ds" in t or "dsi" in t) and price <= 450
+    if "gameboy" in q: return ("gameboy" in t or "gba" in t or "gbc" in t) and price <= 350
     return False
 
 def pokemon_filter(title, price):
     t = clean(title)
-    if "pokemon" not in t: return False
-    if any(x in t for x in ["booster", "etb", "tincase"]): return price <= 250
+    if "pokemon" not in t and "pokémon" not in t: return False
+    if any(x in t for x in ["booster", "etb", "blister", "bundle"]): return price <= 300
     return False
 
 def is_uncertain(title, query):
-    # Prosta logika: jeśli tytuł jest bardzo krótki, pytaj AI
-    return len(title.split()) < 4
+    t = clean(title)
+    if "pokemon" in query: return not any(x in t for x in ["booster", "etb", "blister"])
+    return not any(x in t for x in ["1000", "2000", "3000", "lite", "xl"])
 
 # =========================
-# AI & NETWORK
+# AI REVIEW
 # =========================
 def ai_review(title, full_text, price, img_url=None):
-    if not GEMINI_API_KEY: return False, "No API Key"
-    
-    # Check Cache
-    cache_key = f"{clean(title)}|{int(price/20)}"
-    if cache_key in ai_cache: return ai_cache[cache_key]["accept"], ai_cache[cache_key]["reason"]
+    if not GEMINI_API_KEY: return False, "Brak klucza"
+    ckey = f"{clean(title)}|{int(price/20)*20}"
+    if ckey in ai_cache: return ai_cache[ckey]["accept"], ai_cache[ckey]["reason"]
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    prompt = f"Czy to jest konsola (nie gra/akcesorium)? Tytuł: {title}, Cena: {price}. Odpowiedz: ACCEPT lub REJECT + powód."
-    
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    prompt = f"Zidentyfikuj ofertę: '{title}'. Cena: {price}zł. Czy to konsola/zestaw TCG? Odpowiedz tylko: DECISION: ACCEPT/REJECT, REASON: (powód)."
     
     try:
-        r = requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
         if r.status_code == 429: return None, "Rate limit"
         res = r.json()
-        text = res['candidates'][0]['content']['parts'][0]['text'].upper()
-        accept = "ACCEPT" in text
-        ai_cache[cache_key] = {"accept": accept, "reason": text[:30]}
+        ans = res['candidates'][0]['content']['parts'][0]['text']
+        accept = "ACCEPT" in ans.upper()
+        ai_cache[ckey] = {"accept": accept, "reason": ans[:50]}
         save_ai_cache(ai_cache)
-        return accept, text[:30]
-    except:
-        return None, "Error"
+        return accept, ans[:50]
+    except: return None, "Błąd API"
 
+# =========================
+# CORE PROCESSING
+# =========================
 def send_telegram(title, price, link, source):
-    clean_link = link.split("?")[0]
+    clean_link = link.split("?")[0].rstrip("/")
     if clean_link in sent_links: return
     
-    msg = f"🔥 *OKAZJA {source}*\n📦 {title}\n💰 *{price} zł*\n🔗 {clean_link}"
-    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                  data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+    emoji = {"OLX": "🟢", "VINTED": "🟣", "ALLEGRO": "🟠"}.get(source, "📍")
+    msg = f"🔥 *NOWA OKAZJA*\n{'-'*20}\n📦 {title[:80]}\n💰 *{price} zł*\n{emoji} {source}\n🔗 {clean_link}"
     
-    sent_links.add(clean_link)
-    save_sent_link(clean_link)
+    try:
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                      data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+        sent_links.add(clean_link)
+        save_sent_link(clean_link)
+    except Exception as e: print(f"❌ Telegram Error: {e}")
+
+def process_items(items, query, source, get_data_func):
+    for item in items[:15]:
+        try:
+            title, link, price, text, img = get_data_func(item)
+            if not link or not price: continue
+            
+            if not is_valid(title, text): continue
+            
+            pass_filt = pokemon_filter(title, price) if query == "pokemon" else console_filter(query, title, price, text)
+            if not pass_filt: continue
+
+            if is_uncertain(title, query):
+                acc, rea = ai_review(title, text, price, img)
+                if acc is None:
+                    ai_pending_queue.append({"title": title, "price": price, "link": link, "source": source, "text": text})
+                    continue
+                if not acc: continue
+            
+            send_telegram(title, price, link, source)
+        except: continue
 
 # =========================
 # SCRAPERS
 # =========================
 def olx_search(query):
     print(f"🟢 OLX: {query}")
-    api_url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&limit=20"
     try:
-        r = SESSION.get(api_url, timeout=10)
+        r = SESSION.get(f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc", timeout=10)
         data = r.json().get('data', [])
-        for offer in data:
-            title = offer.get('title')
-            price = offer.get('price', {}).get('value', {}).get('amount')
-            link = offer.get('url')
-            if not all([title, price, link]): continue
-            
-            if is_valid(title, title) and console_filter(query, title, float(price), ""):
-                send_telegram(title, price, link, "OLX")
-    except Exception as e: print(f"❌ OLX Error: {e}")
+        def parse(o):
+            return o['title'], o['url'], float(o['price']['value']['amount']), o['title'], None
+        process_items(data, query, "OLX", parse)
+    except: print("❌ OLX Error")
+
+def vinted_search(query):
+    print(f"🟣 VINTED: {query}")
+    try:
+        r = SESSION.get(f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first", timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+        items = soup.select("div.feed-grid__item")
+        def parse(i):
+            a = i.select_one("a")
+            t = a.get('title', '') if a else ''
+            l = "https://www.vinted.pl" + a['href'] if a else ''
+            p = get_price(i.get_text())
+            return t, l, p, i.get_text(), None
+        process_items(items, query, "VINTED", parse)
+    except: print("❌ VINTED Error")
+
+def allegro_search(query):
+    print(f"🟠 ALLEGRO: {query}")
+    try:
+        r = SESSION.get(f"https://allegrolokalnie.pl/oferty/q/{query}?order=newest", timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+        items = soup.select("article")
+        def parse(i):
+            t = i.select_one("h3").get_text() if i.select_one("h3") else ""
+            l = "https://allegrolokalnie.pl" + i.select_one("a")['href']
+            p = get_price(i.get_text())
+            return t, l, p, i.get_text(), None
+        process_items(items, query, "ALLEGRO", parse)
+    except: print("❌ Allegro Error")
 
 # =========================
-# MAIN LOOP
+# MAIN
 # =========================
 if __name__ == "__main__":
-    print("🚀 SNIPER START")
-    QUERIES = ["psp konsola", "nintendo 3ds", "gameboy color"]
-    
+    QUERIES = ["konsola psp", "nintendo 3ds", "gameboy", "pokemon"]
     while True:
         for q in QUERIES:
             olx_search(q)
-            time.sleep(random.uniform(5, 10))
-        
-        print("⏳ Czekam 60s...")
+            vinted_search(q)
+            allegro_search(q)
+            time.sleep(5)
+        print("⏳ Cykl zakończony. Sen 60s.")
         time.sleep(60)
