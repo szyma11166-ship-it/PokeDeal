@@ -13,18 +13,30 @@ BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 GEMINI_API_KEY = "AIzaSyCBRzBU3IE6-Gt3mAHDQwlhpJ1WwHbpdZE"
 
-print("=== PLIK ZALADOWANY Z:", __file__, "===")
-
 
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
 }
 
-print("🚀 SNIPER V8.7 START")
+print("🚀 SNIPER V8.8 START")
+
+# Globalna sesja HTTP
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
 
 SENT_FILE = "sent_links.txt"
 
@@ -172,8 +184,8 @@ def is_valid(title, full_text):
 # =========================
 PSP_MODELS = [
     "psp 1000", "psp 2000", "psp 3000", "psp 3004",
-    "psp go", "psp street", "psp-1000", "psp-2000",
-    "psp-3000", "psp-3004", "pspgo",
+    "psp go", "psp street", "psp slim", "psp-1000",
+    "psp-2000", "psp-3000", "psp-3004", "pspgo",
     "sony psp", "konsola psp"
 ]
 
@@ -210,6 +222,10 @@ PSP_GAME_TITLES = [
     "medieval", "lumines", "pursuit force",
     "burnout", "colin mcrae", "dirt ",
     "flatout", "smackdown", "nba ", "nfl ",
+    "fight night", "mortal kombat", "street fighter",
+    "god of war", "gta ", "grand theft",
+    "resistance", "killzone", "medal of honor",
+    "call of duty", "battlefield", "tomb raider",
 ]
 
 DS_GAME_TITLES = [
@@ -341,7 +357,7 @@ def pokemon_filter(title, price):
 
 
 # =========================
-# IS UNCERTAIN — wywołaj AI tylko dla niejednoznacznych
+# IS UNCERTAIN
 # =========================
 def is_uncertain(title, query):
     t = clean(title)
@@ -401,7 +417,7 @@ REASON: uzasadnienie po polsku (max 10 slow)"""
 
 def fetch_image_base64(img_url):
     try:
-        r = requests.get(img_url, headers=HEADERS, timeout=8)
+        r = SESSION.get(img_url, timeout=8)
         if r.status_code == 200:
             return base64.b64encode(r.content).decode("utf-8"), r.headers.get("content-type", "image/jpeg")
     except Exception:
@@ -563,7 +579,6 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
                 print(f"  🔍 filtr konsoli/pokemon odrzucił: {title[:40]}")
                 continue
 
-            # AI tylko dla niejednoznacznych ofert
             if is_uncertain(title, query):
                 accept, reason = ai_review(title, text, price, img_url)
                 print(f"  🤖 AI: {'✅' if accept else '❌'} {reason} | {title[:50]}")
@@ -594,9 +609,7 @@ def olx_search(query):
     )
 
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        print(f"  📡 status: {r.status_code}")
-        print(f"  📄 html fragment: {r.text[2000:2500]}")  # fragment HTML
+        r = SESSION.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         items = soup.select("div[data-cy='l-card']")
         print(f"📦 {len(items)} ofert")
@@ -634,10 +647,9 @@ def vinted_search(query):
     }
 
     try:
-        r = requests.get(
+        r = SESSION.get(
             "https://www.vinted.pl/catalog",
             params=params,
-            headers=HEADERS,
             timeout=10
         )
         soup = BeautifulSoup(r.text, "html.parser")
@@ -670,7 +682,7 @@ def allegro_local(query):
     url = f"https://allegrolokalnie.pl/oferty/q/{query_url}?order=newest"
 
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = SESSION.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         items = soup.select("article")
         print(f"📦 {len(items)} ofert")
