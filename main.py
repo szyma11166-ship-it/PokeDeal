@@ -13,6 +13,8 @@ BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 GEMINI_API_KEY = "AIzaSyCBRzBU3IE6-Gt3mAHDQwlhpJ1WwHbpdZE"
 
+print("=== PLIK ZALADOWANY Z:", __file__, "===")
+
 
 HEADERS = {
     "User-Agent": (
