@@ -213,7 +213,16 @@ PSP_GAME_TITLES = [
     "buzz master", "go sudoku", "exit ",
     "medieval", "lumines", "pursuit force",
 ]
-
+DS_GAME_TITLES = [
+    "mario kart", "mario bros", "super mario",
+    "zelda", "pokemon mystery", "luigi mansion",
+    "animal crossing", "professor layton",
+    "super smash", "rayman", "disney infinity",
+    "hello kitty", "lego jurassic", "lego star",
+    "new zealand story", "yo-kai watch",
+    "mario sonic", "pes 2012", "zoo resort",
+    "transformers", "sonic", "kirby",
+]
 
 def console_filter(query, title, price, full_text):
     t = clean(title)
@@ -240,9 +249,11 @@ def console_filter(query, title, price, full_text):
         return (has_model or has_psp) and price <= 200
 
     if "3ds" in query:
-        has_model = any(m in t for m in DS_MODELS)
-        has_ds = "3ds" in t or "nintendo ds" in t
-        return (has_model or has_ds) and price <= 400
+    if any(g in t for g in DS_GAME_TITLES):
+        return False
+    has_model = any(m in t for m in DS_MODELS)
+    has_ds = "3ds" in t or "nintendo ds" in t
+    return (has_model or has_ds) and price <= 400
 
     if "gameboy" in query:
         has_model = any(m in t for m in GB_MODELS)
