@@ -21,7 +21,7 @@ HEADERS = {
     )
 }
 
-print("🚀 SNIPER V8.5 START")
+print("🚀 SNIPER V8.6 START")
 
 SENT_FILE = "sent_links.txt"
 
@@ -77,7 +77,6 @@ def allegro_title(item):
 
 
 def allegro_link(item):
-    """Buduje poprawny link dla Allegro Lokalnie."""
     a = item.select_one("a")
     if not a:
         return None
@@ -203,7 +202,6 @@ FAKE_CONSOLES = [
     "clone", "klon konsoli"
 ]
 
-# Pojedyncze tytuły gier PSP — odrzucamy
 PSP_GAME_TITLES = [
     "yu-gi-oh", "lego star wars", "lord of arcana",
     "crisis core", "metal gear", "gran turismo",
@@ -212,7 +210,10 @@ PSP_GAME_TITLES = [
     "invizimals", "buzz", "sudoku", "singstar",
     "buzz master", "go sudoku", "exit ",
     "medieval", "lumines", "pursuit force",
+    "burnout", "colin mcrae", "dirt ",
+    "flatout", "smackdown", "nba ", "nfl ",
 ]
+
 DS_GAME_TITLES = [
     "mario kart", "mario bros", "super mario",
     "zelda", "pokemon mystery", "luigi mansion",
@@ -220,9 +221,26 @@ DS_GAME_TITLES = [
     "super smash", "rayman", "disney infinity",
     "hello kitty", "lego jurassic", "lego star",
     "new zealand story", "yo-kai watch",
-    "mario sonic", "pes 2012", "zoo resort",
-    "transformers", "sonic", "kirby",
+    "mario sonic", "pes 20", "zoo resort",
+    "transformers", "kirby", "sonic ",
+    "inazuma", "dragon quest", "final fantasy",
+    "harvest moon", "rune factory", "shin megami",
+    "ace attorney", "rhythm heaven", "picross",
+    "brain age", "nintendogs", "brain training",
+    "scribblenauts", "cooking mama", "doa ",
+    "star fox", "donkey kong", "metroid",
+    "disney", "kung fu", "naruto",
 ]
+
+GB_GAME_TITLES = [
+    "pokemon red", "pokemon blue", "pokemon yellow",
+    "pokemon gold", "pokemon silver", "pokemon crystal",
+    "tetris", "super mario land", "metroid",
+    "zelda", "donkey kong", "kirby", "wario",
+    "mega man", "castlevania", "contra",
+    "final fantasy", "dragon warrior",
+]
+
 
 def console_filter(query, title, price, full_text):
     t = clean(title)
@@ -241,7 +259,6 @@ def console_filter(query, title, price, full_text):
             return False
 
     if "psp" in query:
-        # Odrzuc pojedyncze gry PSP po tytule
         if any(g in t for g in PSP_GAME_TITLES):
             return False
         has_model = any(m in t for m in PSP_MODELS)
@@ -249,13 +266,15 @@ def console_filter(query, title, price, full_text):
         return (has_model or has_psp) and price <= 200
 
     if "3ds" in query:
-    if any(g in t for g in DS_GAME_TITLES):
-        return False
-    has_model = any(m in t for m in DS_MODELS)
-    has_ds = "3ds" in t or "nintendo ds" in t
-    return (has_model or has_ds) and price <= 400
+        if any(g in t for g in DS_GAME_TITLES):
+            return False
+        has_model = any(m in t for m in DS_MODELS)
+        has_ds = "3ds" in t or "nintendo ds" in t
+        return (has_model or has_ds) and price <= 400
 
     if "gameboy" in query:
+        if any(g in t for g in GB_GAME_TITLES):
+            return False
         has_model = any(m in t for m in GB_MODELS)
         has_gba = (
             "gameboy" in t or "game boy" in t or
@@ -284,7 +303,9 @@ def pokemon_filter(title, price):
         "karta", "karty", "card", "cards",
         "single", "holo", "reverse",
         "cm /", "mies.", "lat ·", "rozm",
-        "bluzk", "koszulk", "spodnie", "bluza", "t-shirt"
+        "bluzk", "koszulk", "spodnie", "bluza", "t-shirt",
+        "mystery dungeon", "ranger", "snap",
+        "stadium", "colosseum", "gale of darkness",
     ]
 
     if any(b in t for b in banned):
@@ -340,6 +361,7 @@ BEZWZGLEDNIE ODRZUC:
 - Konta PSN/Steam/kody
 - Pojedyncze karty Pokemon
 - Ubrania, figurki, zabawki z motywem Pokemon
+- Gry video Pokemon (Mystery Dungeon, Ranger itp.)
 
 AKCEPTUJ tylko jesli masz pewnosc ze to konsola lub zestaw z konsola lub produkt TCG Pokemon.
 Przy watpliwosci — ODRZUC.
@@ -361,7 +383,7 @@ def fetch_image_base64(img_url):
 
 def ai_review(title, full_text, price, img_url=None):
     if not GEMINI_API_KEY:
-        return True, "brak klucza AI — przepuszczam"
+        return False, "brak klucza AI — odrzucam"
 
     prompt = (
         f"Tytul oferty: {title}\n"
@@ -412,10 +434,10 @@ def ai_review(title, full_text, price, img_url=None):
         except Exception as e:
             print(f"⚠️ AI ERROR: {e}")
             if attempt == 2:
-                return False, "blad AI — odrzucam dla bezpieczenstwa"
+                return False, "blad AI — odrzucam"
             time.sleep(5)
 
-    return False, "blad AI — odrzucam dla bezpieczenstwa"
+    return False, "blad AI — odrzucam"
 
 
 # =========================
@@ -431,7 +453,6 @@ def send(title, price, link, source):
     if not link or "http" not in link:
         return
 
-    # Normalizuj link — usun parametry trackoingowe
     link_clean = link.split("?")[0].rstrip("/")
 
     if link_clean in sent_links:
@@ -482,7 +503,6 @@ def process_items(items, query, source, get_title, get_link, get_full_text, get_
             text = get_full_text(item)
             img_url = get_img_url(item) if get_img_url else None
 
-            # Sprawdz duplikat przed filtrowaniem
             if link:
                 link_clean = link.split("?")[0].rstrip("/")
                 if link_clean in sent_links:
