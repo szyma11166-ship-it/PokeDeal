@@ -14,7 +14,6 @@ GEMINI_API_KEY = "AIzaSyCBRzBU3IE6-Gt3mAHDQwlhpJ1WwHbpdZE"
 SENT_FILE = "sent_links.txt"
 HISTORY_FILE = "price_history.json"
 
-# --- RYGORYSTYCZNA LOGIKA FILTROWANIA ---
 def identify_category(title):
     t = title.lower()
     if any(x in t for x in ["gameboy", "gba", "gbc", "advance", "dmg"]): return "GAMEBOY"
@@ -29,25 +28,31 @@ def is_valid(title, text, price):
     if not price or price <= 5 or price > 500: return False
     
     t_f = (title + " " + text).lower()
-    
-    # 1. CZARNA LISTA (Akcesoria, śmieci, inne konsole)
+    cat = identify_category(title)
+    if not cat: return False
+
+    # 1. ROZSZERZONA CZARNA LISTA (Broszury, Alby, Tekstylia, Akcesoria)
     trash = [
-        "switch", "lite", "oled", "v1", "v2", "wii", "balance board", "fit", "move",
-        "pegasus", "famicom", "nes", "snes", "n64", "gamecube", "retro g2", "g28", 
+        "switch", "lite", "oled", "wii", "balance board", "fit", "move", "pegasus",
         "szkło", "glass", "folia", "etui", "case", "pokrowiec", "uchwyt", "grip",
-        "r36s", "anbernic", "powkiddy", "miyoo", "sf2000", "pudełko", "box", "instrukcja",
-        "manual", "kabel", "hdmi", "zasilacz", "adapter", "części", "uszkodzone", "nietestowane"
+        "r36s", "anbernic", "powkiddy", "miyoo", "sf2000", "pudełko", "box",
+        "instrukcja", "manual", "broszura", "ulotka", "gazetka", "plakat",
+        "plecak", "torba", "torebka", "backpack", "bag", "koszulka", "shirt",
+        "alba", "sukienka", "komunijna", "dziewczynka", "strój",
+        "ładowarka", "zasilacz", "kabel", "adapter", "części", "na części", "obudowa", "shell",
+        "gra", "gry", "gra na", "sama gra", "cartridge", "dyskietka", "płyta"
     ]
     if any(b in t_f for b in trash): return False
 
-    # 2. BIAŁA LISTA (Weryfikacja czy to na pewno konsola/produkt TCG)
-    cat = identify_category(title)
-    if not cat: return False # Odrzuca wszystko, co nie pasuje do kategorii
+    # 2. FILTR CENOWY "ANTY-GRY / ANTY-ŁADOWARKI"
+    # Jeśli szukamy konsoli, a cena jest podejrzanie niska (np. 30zł), to prawdopodobnie sama gra/kabel
+    if cat in ["GAMEBOY", "PSP", "3DS_FAMILY"] and price < 60: return False
 
+    # 3. BIAŁA LISTA I SZTYWNE LIMITY
     whitelist = {
         "GAMEBOY": ["gameboy", "game boy", "gba", "gbc", "dmg", "advance", "sp"],
-        "PSP": ["psp", "1004", "2004", "3004", "go", "e1004", "street"],
-        "3DS_FAMILY": ["3ds", "2ds", "new 3ds", "new 2ds", "xl", "ll"],
+        "PSP": ["psp", "1004", "2004", "3004", "go", "e1004", "street", "konsola"],
+        "3DS_FAMILY": ["3ds", "2ds", "new 3ds", "new 2ds", "xl", "ll", "konsola"],
         "POKEMON_BUNDLE": ["booster bundle", "bundle"],
         "POKEMON_ILLUST": ["illustration", "partner"],
         "POKEMON_DAY": ["day 2026", "pokemon day"]
@@ -55,7 +60,6 @@ def is_valid(title, text, price):
     
     if not any(w in t_f for w in whitelist.get(cat, [])): return False
 
-    # 3. SZTYWNE LIMITY CENOWE
     limits = {
         "GAMEBOY": 300, "PSP": 250, "3DS_FAMILY": 450, 
         "POKEMON_BUNDLE": 150, "POKEMON_ILLUST": 150, "POKEMON_DAY": 80
@@ -89,7 +93,7 @@ def get_avg_price(title):
 
 # --- SCRAPER SILNIK ---
 def scrape(source, query):
-    headers = {"User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/{random.randint(115,126)}.0.0.0"}
+    headers = {"User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/{random.randint(115,127)}.0.0.0"}
     items = []
     try:
         if source == "OLX":
@@ -122,9 +126,9 @@ def scrape(source, query):
                 update_trends(title, price)
                 
                 msg = (
-                    f"🎯 *NOWA OKAZJA {source}*\n━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🎯 *OKAZJA {source}*\n━━━━━━━━━━━━━━━━━━━━\n"
                     f"📦 *{title[:70]}*\n"
-                    f"💰 Cena: `{price:.2f} zł` (Śr: {avg:.0f} zł)\n"
+                    f"💰 Cena: `{price:.2f} zł` (Śr: {avg:.1f} zł)\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n🔗 [KUP TERAZ]({clean_link})"
                 )
                 requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
@@ -135,25 +139,24 @@ def scrape(source, query):
     except Exception as e:
         print(f"⚠️ Błąd {source}: {e}")
 
-# --- URUCHOMIENIE ---
 if __name__ == "__main__":
     if not os.path.exists(SENT_FILE): open(SENT_FILE, 'w').close()
     sent_links = set(open(SENT_FILE).read().split())
     
-    # Precyzyjne zapytania z wykluczeniami na poziomie portalu
+    # Precyzyjne zapytania z wykluczeniami
     QUERIES = [
-        "gameboy -switch -wii -szkło -etui",
-        "psp konsola -szkło -etui -ładowarka",
-        "nintendo 3ds -switch -wii -2ds",
-        "booster bundle pokemon",
-        "illustration collection pokemon",
+        "gameboy konsola -switch -wii -alba -torba -plecak",
+        "psp konsola -etui -ładowarka -sukienka",
+        "nintendo 3ds -switch -wii",
+        "pokemon booster bundle",
+        "pokemon illustration collection",
         "pokemon day 2026"
     ]
     
-    print(f"🚀 SNIPER V10.7 ACTIVE | CLEAN MODE")
+    print(f"🚀 SNIPER V10.8 ACTIVE | NUCLEAR CLEAN MODE")
     while True:
         for q in QUERIES:
             for src in ["OLX", "VINTED"]:
                 scrape(src, q)
-                time.sleep(random.randint(15, 30))
+                time.sleep(random.randint(20, 40))
         time.sleep(60)
