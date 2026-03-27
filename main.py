@@ -7,8 +7,8 @@ import os
 import hashlib
 
 # --- CONFIG ---
-BOT_TOKEN = os.getenv("BOT_TOKEN") or "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
-CHAT_ID = os.getenv("CHAT_ID") or "-1003743099672"
+BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
+CHAT_ID = "-1003743099672"
 SENT_FILE = "sent_links.txt"
 LOG_FILE = "sniper_debug.log"
 
