@@ -21,18 +21,27 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # 1. CZARNA LISTA (Blokada otwartych, pustych i ubrań)
+    # 1. CZARNA LISTA (Śmieci + Języki których NIE CHCESZ)
     bad_words = [
+        # Śmieci/Puste
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
         "empty", "box only", "puste", "goala", "cutie goala", "fara", "tom", 
         "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra",
-        "bluza", "plush", "plusz", "pluszak", "koszulka", "shirt", "używany kod", "pudełko po"
+        "bluza", "plush", "plusz", "pluszak", "koszulka", "shirt", "używany kod", "pudełko po",
+        
+        # JĘZYKI DO BLOKADY (Japońskie, Koreańskie, Niemieckie, itp.)
+        "japanese", "japoński", "japońskie", "japońska", "jp", "jap", 
+        "korean", "koreański", "koreańska", "kor",
+        "german", "deutsch", "niemiecki", "niemiecka", "niemieckie", " de ",
+        "chinese", "chiński", "chińska", "spanish", "hiszpański", "esp",
+        "french", "francuski", "it", "italian", "włoski"
     ]
     
+    # Sprawdzanie czy którykolwiek "bad word" występuje jako osobne słowo lub fraza
     if any(x in t_f for x in bad_words):
         return False, None
 
-    # 2. FILTRY SPECJALISTYCZNE (Single, numery kart, sztuki węgierskie)
+    # 2. FILTRY SPECJALISTYCZNE
     if re.search(r"\d\s?db\b", t_f) and "booster" not in t_f and price < 60:
         return False, None
     if re.search(r"\d{1,3}/\d{3}", t_f) and price < 60 and "slab" not in t_f:
@@ -64,7 +73,7 @@ def is_valid_strict(title, price):
     
     if not cat: return False, None
     
-    # 4. LIMITY CENOWE (GB zmienione na 300)
+    # 4. LIMITY CENOWE
     limits = {
         "POKE_ETB": 250, "POKE_FIRST": 150, "POKE_DAY": 80, "POKE_GEN": 200,    
         "GB": 300, "PSP": 300, "PSP_GO": 350, "VITA": 500, "3DS": 500, "DS": 250
@@ -84,6 +93,8 @@ def is_valid_strict(title, price):
         return False, None
         
     return True, cat
+
+# --- Reszta kodu bez zmian (scrape_olx, scrape_vinted, process_item, send_telegram) ---
 
 def scrape_olx(query, silent=False):
     found = 0
@@ -116,7 +127,6 @@ def scrape_vinted(session, query, silent=False):
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ").lower()
-                # Filtr ofert "dni temu"
                 if any(x in txt for x in ["dni", "days", "dienas", "dage", "vakar"]): continue
                 
                 link = card.find("a", href=True)
@@ -147,15 +157,14 @@ def send_telegram(msg):
     except: pass
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.11 - START (GB 300 & Wider Pokemon Search)")
+    log_debug("🚀 SNIPER v17.12 - START (No Japanese/German/Korean)")
     vs = requests.Session()
-    # Rozszerzone zapytania (szukamy ogólniej, bot sam odfiltruje śmieci)
     QUERIES = [
         "psp konsola", "ps vita", "3ds", "gameboy", 
         "booster bundle", "pokemon bundle", "pokemon booster", 
         "shrouded fable", "pokemon day", "pokemon 30th"
     ]
-    log_debug("Cold Start (pobieranie obecnych ofert)...")
+    log_debug("Cold Start...")
     for q in QUERIES:
         scrape_olx(q, silent=True)
         scrape_vinted(vs, q, silent=True)
