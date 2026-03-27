@@ -15,27 +15,21 @@ def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def get_hash(title, price):
+    # Hashowanie tytułu i ceny, by uniknąć duplikatów
     raw = f"{title[:50]}_{int(price)}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # --- MIĘDZYNARODOWA CZARNA LISTA (ŚMIECI I PUSTE PUDEŁKA) ---
-    # PL: puste, tylko pudełko | EN: empty, box only | RO: goala, fara | HU: nincs, üres | SE/DK: tom, kun
+    # --- MIĘDZYNARODOWA CZARNA LISTA (ŚMIECI / PUSTE / OTWARTE) ---
     bad_words = [
-        "otwarte", "otwarty", "otwarta", "open", "opened",
-        "empty", "empty box", "puste", "pudełko", "only box", "box only", "sama góra",
-        "goala", "cutie goala", "fara", "nincs", "üres", "nincs benne", "without boosters",
-        "tom", "kun box", "tom ask", "no console", "bez konsoli", "brak konsoli",
-        "display only", "scatola", "leer", "nur box"
+        "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
+        "empty", "box only", "puste", "goala", "cutie goala", "fara", "tom", 
+        "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra"
     ]
     
     if any(x in t_f for x in bad_words):
-        return False, None
-
-    # Filtr na "sztuki" (HU: db) - jeśli ktoś sprzedaje 1db, 2db (zazwyczaj single/śmieci)
-    if re.search(r"\d\s?db", t_f) and "booster" not in t_f and price < 60:
         return False, None
 
     cat = None
@@ -70,28 +64,23 @@ def is_valid_strict(title, price):
         "GB": 370, "PSP": 300, "PSP_GO": 350, "VITA": 500, "3DS": 500, "DS": 250
     }
     
-    # Wyższe ceny minimalne, żeby odciąć puste pudełka, które kosztują np. 30-50 zł
     min_p = {
-        "POKE_ETB": 90, "POKE_FIRST": 30, "POKE_DAY": 25, "POKE_GEN": 35,
+        "POKE_ETB": 95, "POKE_FIRST": 30, "POKE_DAY": 15, "POKE_GEN": 35,
         "GB": 80, "PSP": 80, "PSP_GO": 150, "VITA": 180, "3DS": 120, "DS": 70
     }
     
-    # SPECJALNY FILTR NA SINGLE (Karty):
-    # Jeśli cena jest niska, a w tytule są słowa "kort", "karta", "card" - odrzucamy
-    if any(x in t_f for x in ["kort", "karta", "card", "singiel"]) and price < 50:
-        if "slab" not in t_f and "graded" not in t_f: # Chyba że to oceniona karta (slab)
+    # Anty-Single (Karty za grosze)
+    if any(x in t_f for x in ["kort", "karta", "card"]) and price < 50:
+        if "slab" not in t_f and "graded" not in t_f:
             return False, None
 
     if price > limits.get(cat, 999) or price < min_p.get(cat, 0):
         return False, None
     
-    # 3. FILTR KLONÓW
     if any(f in t_f for f in ["3d printed", "r36s", "r36h", "emulator", "klon", "drukarka"]):
         return False, None
         
     return True, cat
-
-# ... (funkcje send_telegram, process_item, scrape_olx, scrape_vinted pozostają bez zmian)
 
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -102,13 +91,20 @@ def send_telegram(msg):
 def process_item(title, url, price, src, silent=False):
     clean_url = url.split("?")[0].rstrip("/")
     item_hash = get_hash(title, price)
-    if item_hash in SENT_HASHES or clean_url in SENT_HASHES: return False
+    
+    if item_hash in SENT_HASHES or clean_url in SENT_HASHES:
+        return False
+
     valid, cat = is_valid_strict(title, price)
-    if not valid: return False
+    if not valid:
+        return False
+
     if not silent:
-        msg = f"🎯 *HIT {src}*\n📦 *{title[:70]}*\n💰 `{price:.2f} zł`\n🔗 [KUP TERAZ]({clean_url})"
+        # FORMATOWANIE CENY: .2f zapewnia zawsze dwa miejsca po przecinku (np. 55.00 zł)
+        msg = f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [KUP TERAZ]({clean_url})"
         send_telegram(msg)
-        log_debug(f"🔥 WYSŁANO: {title[:30]}... ({cat})")
+        log_debug(f"🔥 WYSŁANO: {title[:30]}... ({price:.2f} zł) | {cat}")
+    
     SENT_HASHES.add(item_hash)
     SENT_HASHES.add(clean_url)
     return True
@@ -117,7 +113,12 @@ def scrape_olx(query, silent=False):
     found = 0
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "pl-PL,pl;q=0.9"
+        }
+        r = requests.get(url, headers=headers, timeout=12)
+        
         if r.status_code == 200:
             data = r.json().get('data', [])
             for o in data:
@@ -125,49 +126,67 @@ def scrape_olx(query, silent=False):
                 p_data = o.get('price', {}).get('value', {}) or o.get('price', {})
                 p = p_data.get('amount')
                 if p: process_item(o['title'], o['url'], float(p), "OLX", silent)
-    except: pass
+        elif r.status_code == 403:
+            log_debug(f"❌ OLX: 403 (ZABLOKOWANE IP)")
+        else:
+            log_debug(f"⚠️ OLX: Status {r.status_code}")
+            
+    except Exception as e:
+        log_debug(f"⚠️ OLX Error: {e}")
     return found
 
 def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first&random={random.random()}"
-        r = session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36"
+        }
+        r = session.get(url, headers=headers, timeout=12)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ")
+                # Ignoruj stare oferty (podbicia z dni wstecz)
                 if any(x in txt.lower() for x in ["dni", "days", "dienas", "dage"]): continue
+                
                 link = card.find("a", href=True)
                 p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
                 if link and p_match:
-                    price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
+                    p_str = p_match.group(1).replace(",", ".").replace(" ", "")
+                    price = float(p_str)
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
     except: pass
     return found
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.7 - START (Multi-Language Junk Filter)")
+    log_debug("🚀 SNIPER v17.8 - START (All Filters + Fixed Prices)")
     vs = requests.Session()
+    
     QUERIES = [
         "psp konsola", "psp go", "ps vita", "3ds konsola", "gameboy advance", 
         "pokemon booster bundle", "pokemon first partner", "pokemon day 2026", 
         "pokemon etb", "pokemon 30th anniversary"
     ]
-    log_debug("Zaciągam obecne oferty (Cold Start)...")
+    
+    log_debug("Cold Start...")
     for q in QUERIES:
         scrape_olx(q, silent=True)
         scrape_vinted(vs, q, silent=True)
-    log_debug(f"Baza gotowa ({len(SENT_HASHES)} linków).")
+    
+    log_debug(f"Gotowe. Baza: {len(SENT_HASHES)} linków.")
+
     while True:
         v_total = o_total = 0
         random.shuffle(QUERIES)
+        
         for q in QUERIES:
             o_total += scrape_olx(q)
             time.sleep(random.randint(5, 10))
             v_total += scrape_vinted(vs, q)
             time.sleep(random.randint(15, 25))
+        
         log_debug(f"Pętla OK. V({v_total}) O({o_total}).")
-        time.sleep(random.randint(40, 80))
+        time.sleep(random.randint(45, 90))
