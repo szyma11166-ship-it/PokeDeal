@@ -120,10 +120,16 @@ def scrape_olx(query, silent=False):
     found = 0
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc"
+        
+        # Wzmocnione nagłówki - jeszcze bardziej udajemy człowieka
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
-            "Accept-Language": "pl-PL,pl;q=0.9"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://www.olx.pl/",
+            "Connection": "keep-alive"
         }
+        
         r = requests.get(url, headers=headers, timeout=12)
         
         if r.status_code == 200:
@@ -135,8 +141,8 @@ def scrape_olx(query, silent=False):
                 if p: process_item(o['title'], o['url'], float(p), "OLX", silent)
         elif r.status_code == 403:
             log_debug(f"❌ OLX: 403 (ZABLOKOWANE IP)")
-        elif r.status_code == 500:
-            # Wyciszam błąd 500 żeby nie spamował, to normalne na OLX
+        elif r.status_code in [500, 202]:
+            # Wyciszamy 500 (błędy serwera OLX) oraz 202 (miękkie weryfikacje anty-botowe)
             pass
         else:
             log_debug(f"⚠️ OLX: Status {r.status_code}")
@@ -144,6 +150,7 @@ def scrape_olx(query, silent=False):
     except Exception as e:
         log_debug(f"⚠️ OLX Error: {e}")
     return found
+
 
 def scrape_vinted(session, query, silent=False):
     found = 0
