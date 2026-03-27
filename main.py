@@ -15,33 +15,41 @@ def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def get_hash(title, price):
-    # Hashowanie tytułu i ceny, by uniknąć duplikatów
     raw = f"{title[:50]}_{int(price)}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # --- MIĘDZYNARODOWA CZARNA LISTA (ŚMIECI / PUSTE / OTWARTE) ---
+    # 1. CZARNA LISTA (Rozszerzona o pluszaki i ubrania)
     bad_words = [
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
         "empty", "box only", "puste", "goala", "cutie goala", "fara", "tom", 
-        "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra"
+        "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra",
+        "bluza", "plush", "plusz", "pluszak", "mystery plush", "koszulka"
     ]
     
     if any(x in t_f for x in bad_words):
         return False, None
 
+    # 2. FILTR WĘGIERSKICH SINGLI (np. 1db, 2db)
+    if re.search(r"\d\s?db\b", t_f) and "booster" not in t_f and price < 60:
+        return False, None
+
+    # 3. FILTR NUMERACJI KART (np. 025/165) - odcina tanie single
+    if re.search(r"\d{1,3}/\d{3}", t_f) and price < 60 and "slab" not in t_f:
+        return False, None
+
     cat = None
     
-    # 1. KATEGORYZACJA
+    # 4. KATEGORYZACJA (Poprawiony "box" na pełne słowo, żeby nie łapał Xbox/boxy)
     if "first partner" in t_f: 
         cat = "POKE_FIRST"
     elif any(x in t_f for x in ["pokemon day", "day 2026", "30th anniversary", "30th"]): 
         cat = "POKE_DAY"
     elif "etb" in t_f or "elite trainer box" in t_f:
         cat = "POKE_ETB"
-    elif any(x in t_f for x in ["booster", "sealed", "slab", "box", "display", "bundle"]): 
+    elif any(x in t_f for x in ["booster", "sealed", "display", "bundle"]) or re.search(r"\b(box|slab)\b", t_f): 
         cat = "POKE_GEN"
     elif "psp go" in t_f: 
         cat = "PSP_GO"
@@ -58,7 +66,7 @@ def is_valid_strict(title, price):
     
     if not cat: return False, None
     
-    # 2. LIMITY CENOWE
+    # 5. LIMITY CENOWE
     limits = {
         "POKE_ETB": 250, "POKE_FIRST": 150, "POKE_DAY": 80, "POKE_GEN": 200,    
         "GB": 370, "PSP": 300, "PSP_GO": 350, "VITA": 500, "3DS": 500, "DS": 250
@@ -69,7 +77,7 @@ def is_valid_strict(title, price):
         "GB": 80, "PSP": 80, "PSP_GO": 150, "VITA": 180, "3DS": 120, "DS": 70
     }
     
-    # Anty-Single (Karty za grosze)
+    # 6. Anty-Single (Karty za grosze wg słów)
     if any(x in t_f for x in ["kort", "karta", "card"]) and price < 50:
         if "slab" not in t_f and "graded" not in t_f:
             return False, None
@@ -100,7 +108,6 @@ def process_item(title, url, price, src, silent=False):
         return False
 
     if not silent:
-        # FORMATOWANIE CENY: .2f zapewnia zawsze dwa miejsca po przecinku (np. 55.00 zł)
         msg = f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [KUP TERAZ]({clean_url})"
         send_telegram(msg)
         log_debug(f"🔥 WYSŁANO: {title[:30]}... ({price:.2f} zł) | {cat}")
@@ -128,6 +135,9 @@ def scrape_olx(query, silent=False):
                 if p: process_item(o['title'], o['url'], float(p), "OLX", silent)
         elif r.status_code == 403:
             log_debug(f"❌ OLX: 403 (ZABLOKOWANE IP)")
+        elif r.status_code == 500:
+            # Wyciszam błąd 500 żeby nie spamował, to normalne na OLX
+            pass
         else:
             log_debug(f"⚠️ OLX: Status {r.status_code}")
             
@@ -149,7 +159,6 @@ def scrape_vinted(session, query, silent=False):
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ")
-                # Ignoruj stare oferty (podbicia z dni wstecz)
                 if any(x in txt.lower() for x in ["dni", "days", "dienas", "dage"]): continue
                 
                 link = card.find("a", href=True)
@@ -162,7 +171,7 @@ def scrape_vinted(session, query, silent=False):
     return found
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.8 - START (All Filters + Fixed Prices)")
+    log_debug("🚀 SNIPER v17.9 - START (Regex Fixes: Xbox, 2db, Singles)")
     vs = requests.Session()
     
     QUERIES = [
