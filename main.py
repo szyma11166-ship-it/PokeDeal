@@ -21,11 +21,23 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # --- BLOKADA "OTWARTYCH" I SINGLI ---
-    # Wycinamy wszystko co ma "otwarte" oraz próby sprzedaży pojedynczych kart jako "boostery"
-    if any(x in t_f for x in ["otwarte", "otwarty", "otwarta", "open", "opened"]):
-        return False, None
+    # --- MIĘDZYNARODOWA CZARNA LISTA (ŚMIECI I PUSTE PUDEŁKA) ---
+    # PL: puste, tylko pudełko | EN: empty, box only | RO: goala, fara | HU: nincs, üres | SE/DK: tom, kun
+    bad_words = [
+        "otwarte", "otwarty", "otwarta", "open", "opened",
+        "empty", "empty box", "puste", "pudełko", "only box", "box only", "sama góra",
+        "goala", "cutie goala", "fara", "nincs", "üres", "nincs benne", "without boosters",
+        "tom", "kun box", "tom ask", "no console", "bez konsoli", "brak konsoli",
+        "display only", "scatola", "leer", "nur box"
+    ]
     
+    if any(x in t_f for x in bad_words):
+        return False, None
+
+    # Filtr na "sztuki" (HU: db) - jeśli ktoś sprzedaje 1db, 2db (zazwyczaj single/śmieci)
+    if re.search(r"\d\s?db", t_f) and "booster" not in t_f and price < 60:
+        return False, None
+
     cat = None
     
     # 1. KATEGORYZACJA
@@ -35,7 +47,7 @@ def is_valid_strict(title, price):
         cat = "POKE_DAY"
     elif "etb" in t_f or "elite trainer box" in t_f:
         cat = "POKE_ETB"
-    elif any(x in t_f for x in ["booster", "sealed", "slab", "box", "display"]): 
+    elif any(x in t_f for x in ["booster", "sealed", "slab", "box", "display", "bundle"]): 
         cat = "POKE_GEN"
     elif "psp go" in t_f: 
         cat = "PSP_GO"
@@ -54,34 +66,32 @@ def is_valid_strict(title, price):
     
     # 2. LIMITY CENOWE
     limits = {
-        "POKE_ETB": 250,
-        "POKE_FIRST": 150, 
-        "POKE_DAY": 80,     # Limit dla Day 2026 i 30th Anniversary
-        "POKE_GEN": 200,    
-        "GB": 370, 
-        "PSP": 300, 
-        "PSP_GO": 350, 
-        "VITA": 500, 
-        "3DS": 500, 
-        "DS": 250
+        "POKE_ETB": 250, "POKE_FIRST": 150, "POKE_DAY": 80, "POKE_GEN": 200,    
+        "GB": 370, "PSP": 300, "PSP_GO": 350, "VITA": 500, "3DS": 500, "DS": 250
     }
     
+    # Wyższe ceny minimalne, żeby odciąć puste pudełka, które kosztują np. 30-50 zł
     min_p = {
-        "POKE_ETB": 80,
-        "POKE_FIRST": 25, 
-        "POKE_DAY": 15, 
-        "POKE_GEN": 15,
-        "GB": 50, "PSP": 50, "PSP_GO": 100, "VITA": 150, "3DS": 100, "DS": 50
+        "POKE_ETB": 90, "POKE_FIRST": 30, "POKE_DAY": 25, "POKE_GEN": 35,
+        "GB": 80, "PSP": 80, "PSP_GO": 150, "VITA": 180, "3DS": 120, "DS": 70
     }
     
+    # SPECJALNY FILTR NA SINGLE (Karty):
+    # Jeśli cena jest niska, a w tytule są słowa "kort", "karta", "card" - odrzucamy
+    if any(x in t_f for x in ["kort", "karta", "card", "singiel"]) and price < 50:
+        if "slab" not in t_f and "graded" not in t_f: # Chyba że to oceniona karta (slab)
+            return False, None
+
     if price > limits.get(cat, 999) or price < min_p.get(cat, 0):
         return False, None
     
-    # 3. FILTR KLONÓW I ŚMIECI
+    # 3. FILTR KLONÓW
     if any(f in t_f for f in ["3d printed", "r36s", "r36h", "emulator", "klon", "drukarka"]):
         return False, None
         
     return True, cat
+
+# ... (funkcje send_telegram, process_item, scrape_olx, scrape_vinted pozostają bez zmian)
 
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -92,19 +102,13 @@ def send_telegram(msg):
 def process_item(title, url, price, src, silent=False):
     clean_url = url.split("?")[0].rstrip("/")
     item_hash = get_hash(title, price)
-    
-    if item_hash in SENT_HASHES or clean_url in SENT_HASHES:
-        return False
-
+    if item_hash in SENT_HASHES or clean_url in SENT_HASHES: return False
     valid, cat = is_valid_strict(title, price)
-    if not valid:
-        return False
-
+    if not valid: return False
     if not silent:
         msg = f"🎯 *HIT {src}*\n📦 *{title[:70]}*\n💰 `{price:.2f} zł`\n🔗 [KUP TERAZ]({clean_url})"
         send_telegram(msg)
         log_debug(f"🔥 WYSŁANO: {title[:30]}... ({cat})")
-    
     SENT_HASHES.add(item_hash)
     SENT_HASHES.add(clean_url)
     return True
@@ -136,7 +140,6 @@ def scrape_vinted(session, query, silent=False):
                 found += 1
                 txt = card.get_text(separator=" ")
                 if any(x in txt.lower() for x in ["dni", "days", "dienas", "dage"]): continue
-                
                 link = card.find("a", href=True)
                 p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
                 if link and p_match:
@@ -146,32 +149,25 @@ def scrape_vinted(session, query, silent=False):
     return found
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.6 - START (Anti-Open & 30th Anniv)")
+    log_debug("🚀 SNIPER v17.7 - START (Multi-Language Junk Filter)")
     vs = requests.Session()
-    
     QUERIES = [
         "psp konsola", "psp go", "ps vita", "3ds konsola", "gameboy advance", 
         "pokemon booster bundle", "pokemon first partner", "pokemon day 2026", 
         "pokemon etb", "pokemon 30th anniversary"
     ]
-    
     log_debug("Zaciągam obecne oferty (Cold Start)...")
     for q in QUERIES:
         scrape_olx(q, silent=True)
         scrape_vinted(vs, q, silent=True)
-    
-    log_debug(f"Baza gotowa ({len(SENT_HASHES)} linków). Start monitorowania.")
-
+    log_debug(f"Baza gotowa ({len(SENT_HASHES)} linków).")
     while True:
-        v_total = 0
-        o_total = 0
+        v_total = o_total = 0
         random.shuffle(QUERIES)
-        
         for q in QUERIES:
             o_total += scrape_olx(q)
             time.sleep(random.randint(5, 10))
             v_total += scrape_vinted(vs, q)
             time.sleep(random.randint(15, 25))
-        
         log_debug(f"Pętla OK. V({v_total}) O({o_total}).")
         time.sleep(random.randint(40, 80))
