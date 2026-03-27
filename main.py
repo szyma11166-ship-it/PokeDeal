@@ -12,6 +12,19 @@ CHAT_ID = "-1003743099672"
 SENT_FILE = "sent_links.txt"
 LOG_FILE = "sniper_debug.log"
 
+if __name__ == "__main__":
+    # Sprawdzenie zmiennych na starcie
+    if not BOT_TOKEN or "AAEfRWe" not in BOT_TOKEN:
+        print("❌ ERROR: BOT_TOKEN nie został poprawnie wczytany!")
+        # Opcjonalnie wpisz go tutaj na sztywno, jeśli Railway ma problem z ENV
+        # BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
+    
+    if not os.path.exists(SENT_FILE): 
+        open(SENT_FILE, 'w').close()
+    
+    # ... reszta kodu ...
+
+
 def log_debug(msg):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {msg}\n")
