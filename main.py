@@ -20,20 +20,26 @@ def get_hash(title, price):
 
 def is_valid_strict(title, price):
     t_f = title.lower()
+    
+    # --- BLOKADA "OTWARTYCH" I SINGLI ---
+    # Wycinamy wszystko co ma "otwarte" oraz próby sprzedaży pojedynczych kart jako "boostery"
+    if any(x in t_f for x in ["otwarte", "otwarty", "otwarta", "open", "opened"]):
+        return False, None
+    
     cat = None
     
-    # 1. KATEGORYZACJA (Szczegółowa)
-    if any(x in t_f for x in ["first partner"]): 
+    # 1. KATEGORYZACJA
+    if "first partner" in t_f: 
         cat = "POKE_FIRST"
-    elif any(x in t_f for x in ["pokemon day", "day 2026"]): 
+    elif any(x in t_f for x in ["pokemon day", "day 2026", "30th anniversary", "30th"]): 
         cat = "POKE_DAY"
     elif "etb" in t_f or "elite trainer box" in t_f:
         cat = "POKE_ETB"
-    elif any(x in t_f for x in ["booster", "sealed", "slab", "box"]): 
+    elif any(x in t_f for x in ["booster", "sealed", "slab", "box", "display"]): 
         cat = "POKE_GEN"
     elif "psp go" in t_f: 
         cat = "PSP_GO"
-    elif "ps vita" in t_f or "psvita" in t_f: 
+    elif any(x in t_f for x in ["ps vita", "psvita"]): 
         cat = "VITA"
     elif "psp" in t_f: 
         cat = "PSP"
@@ -46,11 +52,11 @@ def is_valid_strict(title, price):
     
     if not cat: return False, None
     
-    # 2. LIMITY CENOWE (ETB podniesione do 250 PLN)
+    # 2. LIMITY CENOWE
     limits = {
-        "POKE_ETB": 250,    # Twój nowy limit
+        "POKE_ETB": 250,
         "POKE_FIRST": 150, 
-        "POKE_DAY": 80,     
+        "POKE_DAY": 80,     # Limit dla Day 2026 i 30th Anniversary
         "POKE_GEN": 200,    
         "GB": 370, 
         "PSP": 300, 
@@ -61,18 +67,18 @@ def is_valid_strict(title, price):
     }
     
     min_p = {
-        "POKE_ETB": 80,     # Odcięcie pustych pudełek/akcesoriów
-        "POKE_FIRST": 20, 
-        "POKE_DAY": 10, 
-        "POKE_GEN": 10,
+        "POKE_ETB": 80,
+        "POKE_FIRST": 25, 
+        "POKE_DAY": 15, 
+        "POKE_GEN": 15,
         "GB": 50, "PSP": 50, "PSP_GO": 100, "VITA": 150, "3DS": 100, "DS": 50
     }
     
     if price > limits.get(cat, 999) or price < min_p.get(cat, 0):
         return False, None
     
-    # 3. FILTR KLONÓW/REPRO
-    if any(f in t_f for f in ["3d printed", "r36s", "r36h", "emulator", "klon"]):
+    # 3. FILTR KLONÓW I ŚMIECI
+    if any(f in t_f for f in ["3d printed", "r36s", "r36h", "emulator", "klon", "drukarka"]):
         return False, None
         
     return True, cat
@@ -140,13 +146,13 @@ def scrape_vinted(session, query, silent=False):
     return found
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.5 - START (ETB Limit 250 PLN)")
+    log_debug("🚀 SNIPER v17.6 - START (Anti-Open & 30th Anniv)")
     vs = requests.Session()
     
-    # Pełna lista zapytań
     QUERIES = [
         "psp konsola", "psp go", "ps vita", "3ds konsola", "gameboy advance", 
-        "pokemon booster bundle", "pokemon first partner", "pokemon day 2026", "pokemon etb"
+        "pokemon booster bundle", "pokemon first partner", "pokemon day 2026", 
+        "pokemon etb", "pokemon 30th anniversary"
     ]
     
     log_debug("Zaciągam obecne oferty (Cold Start)...")
@@ -167,5 +173,5 @@ if __name__ == "__main__":
             v_total += scrape_vinted(vs, q)
             time.sleep(random.randint(15, 25))
         
-        log_debug(f"Pętla OK. Widziano: Vinted({v_total}), OLX({o_total}).")
+        log_debug(f"Pętla OK. V({v_total}) O({o_total}).")
         time.sleep(random.randint(40, 80))
