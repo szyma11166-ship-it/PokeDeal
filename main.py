@@ -21,7 +21,7 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # 1. CZARNA LISTA (Śmieci + Języki których NIE CHCESZ)
+    # 1. CZARNA LISTA (Rozszerzona o Mystery Boxy)
     bad_words = [
         # Śmieci/Puste
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
@@ -29,15 +29,17 @@ def is_valid_strict(title, price):
         "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra",
         "bluza", "plush", "plusz", "pluszak", "koszulka", "shirt", "używany kod", "pudełko po",
         
-        # JĘZYKI DO BLOKADY (Japońskie, Koreańskie, Niemieckie, itp.)
+        # JĘZYKI DO BLOKADY
         "japanese", "japoński", "japońskie", "japońska", "jp", "jap", 
         "korean", "koreański", "koreańska", "kor",
         "german", "deutsch", "niemiecki", "niemiecka", "niemieckie", " de ",
         "chinese", "chiński", "chińska", "spanish", "hiszpański", "esp",
-        "french", "francuski", "it", "italian", "włoski"
+        "french", "francuski", "it", "italian", "włoski",
+        
+        # MYSTERY BOXY
+        "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack"
     ]
     
-    # Sprawdzanie czy którykolwiek "bad word" występuje jako osobne słowo lub fraza
     if any(x in t_f for x in bad_words):
         return False, None
 
@@ -94,15 +96,14 @@ def is_valid_strict(title, price):
         
     return True, cat
 
-# --- Reszta kodu bez zmian (scrape_olx, scrape_vinted, process_item, send_telegram) ---
-
 def scrape_olx(query, silent=False):
     found = 0
     try:
-        url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc"
+        # Dodałem "timestamp" żeby OLX nie serwował nam starych wyników z pamięci podręcznej
+        url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&t={int(time.time())}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            "Accept": "application/json", "Referer": "https://m.olx.pl/"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
+            "Accept": "application/json", "Referer": "https://www.olx.pl/"
         }
         r = requests.get(url, headers=headers, timeout=12)
         if r.status_code == 200:
@@ -112,6 +113,8 @@ def scrape_olx(query, silent=False):
                 p_data = o.get('price', {}).get('value', {}) or o.get('price', {})
                 p = p_data.get('amount')
                 if p: process_item(o['title'], o['url'], float(p), "OLX", silent)
+        elif r.status_code == 403:
+            log_debug("❌ OLX: 403 (ZABLOKOWANE IP)")
     except: pass
     return found
 
@@ -119,12 +122,8 @@ def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first&random={random.random()}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
-            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7"
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
         r = session.get(url, headers=headers, timeout=12)
-        
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
@@ -138,17 +137,8 @@ def scrape_vinted(session, query, silent=False):
                 if link and p_match:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
-                    
-        elif r.status_code == 403:
-            log_debug(f"❌ VINTED: 403 (ZABLOKOWANE IP / GEOBLOCK)")
-        else:
-            log_debug(f"⚠️ VINTED: Status {r.status_code}")
-            
-    except Exception as e:
-        log_debug(f"⚠️ VINTED Error: Połączenie odrzucone (Prawdopodobnie zły region)")
-        
+    except: pass
     return found
-
 
 def process_item(title, url, price, src, silent=False):
     clean_url = url.split("?")[0].rstrip("/")
@@ -170,7 +160,7 @@ def send_telegram(msg):
     except: pass
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.12 - START (No Japanese/German/Korean)")
+    log_debug("🚀 SNIPER v17.14 - START (Anti-Mystery & OLX Cache-Buster)")
     vs = requests.Session()
     QUERIES = [
         "psp konsola", "ps vita", "3ds", "gameboy", 
