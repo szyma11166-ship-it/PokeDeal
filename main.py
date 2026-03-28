@@ -11,6 +11,15 @@ BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
 
+# Lista przeglądarek do rotacji
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:123.0) Gecko/20100101 Firefox/123.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"
+]
+
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
@@ -21,7 +30,7 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # 1. CZARNA LISTA (Rozszerzona o Mystery Boxy)
+    # 1. CZARNA LISTA (Rozszerzona o Lego i Chińskie Konsole)
     bad_words = [
         # Śmieci/Puste
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
@@ -36,8 +45,9 @@ def is_valid_strict(title, price):
         "chinese", "chiński", "chińska", "spanish", "hiszpański", "esp",
         "french", "francuski", "it", "italian", "włoski",
         
-        # MYSTERY BOXY
-        "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack"
+        # MYSTERY BOXY I ZAMIENNIKI
+        "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack",
+        "lego", "r36s", "r36h", "r35s", "miyoo", "anbernic", "trimui"
     ]
     
     if any(x in t_f for x in bad_words):
@@ -99,10 +109,9 @@ def is_valid_strict(title, price):
 def scrape_olx(query, silent=False):
     found = 0
     try:
-        # Dodałem "timestamp" żeby OLX nie serwował nam starych wyników z pamięci podręcznej
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&t={int(time.time())}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
+            "User-Agent": random.choice(USER_AGENTS),
             "Accept": "application/json", "Referer": "https://www.olx.pl/"
         }
         r = requests.get(url, headers=headers, timeout=12)
@@ -122,11 +131,18 @@ def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first&random={random.random()}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
+        headers = {"User-Agent": random.choice(USER_AGENTS)}
         r = session.get(url, headers=headers, timeout=12)
+        
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
+            
+            # Dodatkowa detekcja zabezpieczeń Vinted na statusie 200
+            if not cards and "zablokowany" in r.text.lower():
+                log_debug("❌ VINTED: Blokada / Captcha (Brak ofert)")
+                return 0
+                
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ").lower()
@@ -137,7 +153,10 @@ def scrape_vinted(session, query, silent=False):
                 if link and p_match:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
-    except: pass
+        elif r.status_code in [403, 429]:
+            log_debug(f"❌ VINTED: Blokada IP (Kod {r.status_code})")
+    except Exception as e:
+        log_debug(f"⚠️ VINTED: Błąd połączenia")
     return found
 
 def process_item(title, url, price, src, silent=False):
@@ -160,7 +179,7 @@ def send_telegram(msg):
     except: pass
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.14 - START (Anti-Mystery & OLX Cache-Buster)")
+    log_debug("🚀 SNIPER v17.15 - START (Vinted Fix & UA Rotation)")
     vs = requests.Session()
     QUERIES = [
         "psp konsola", "ps vita", "3ds", "gameboy", 
@@ -178,8 +197,8 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
-            time.sleep(random.randint(5, 8))
+            time.sleep(random.randint(5, 10))  # OLX lekko zwolniony
             v_total += scrape_vinted(vs, q)
-            time.sleep(random.randint(10, 15))
+            time.sleep(random.randint(15, 25)) # Vinted mocno zwolnione (anty-ban)
         log_debug(f"Pętla OK. V({v_total}) O({o_total})")
-        time.sleep(random.randint(30, 60))
+        time.sleep(random.randint(45, 90)) # Przerwa między pętlami
