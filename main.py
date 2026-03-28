@@ -119,8 +119,12 @@ def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first&random={random.random()}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
         r = session.get(url, headers=headers, timeout=12)
+        
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
@@ -134,8 +138,17 @@ def scrape_vinted(session, query, silent=False):
                 if link and p_match:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
-    except: pass
+                    
+        elif r.status_code == 403:
+            log_debug(f"❌ VINTED: 403 (ZABLOKOWANE IP / GEOBLOCK)")
+        else:
+            log_debug(f"⚠️ VINTED: Status {r.status_code}")
+            
+    except Exception as e:
+        log_debug(f"⚠️ VINTED Error: Połączenie odrzucone (Prawdopodobnie zły region)")
+        
     return found
+
 
 def process_item(title, url, price, src, silent=False):
     clean_url = url.split("?")[0].rstrip("/")
