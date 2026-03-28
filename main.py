@@ -11,7 +11,7 @@ BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
 
-# Rotacja przeglądarek, żeby Vinted nie dawało bana V(0)
+# Rotacja przeglądarek
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -30,7 +30,7 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # 1. CZARNA LISTA (Absolutna blokada śmieci i podróbek)
+    # 1. CZARNA LISTA
     bad_words = [
         # Śmieci/Puste
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
@@ -48,10 +48,11 @@ def is_valid_strict(title, price):
         # CHIŃSKIE KONSOLE I KLOCKI
         "lego", "r36s", "r36h", "r35s", "miyoo", "anbernic", "trimui", "rg35xx",
         
-        # PODRÓBKI POKEMON / MYSTERY BOXY
+        # PODRÓBKI POKEMON / MYSTERY BOXY / BOOTLEGI
         "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack",
-        "destined rivals", "perfect order", "gem pack", "brilliant fantasy", 
-        "mega evolution", "proxy", "diy", "custom", "aliexpress", "temu", "zamiennik", "replika"
+        "destined rivals", "perfect order", "gem pack", "brilliant fantasy", "ascended heroes",
+        "mega evolution", "proxy", "diy", "custom", "aliexpress", "temu", "zamiennik", "replika",
+        "bootleg", "repro", "reprodukcja"
     ]
     
     if any(x in t_f for x in bad_words):
@@ -134,7 +135,13 @@ def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first&random={random.random()}"
-        headers = {"User-Agent": random.choice(USER_AGENTS)}
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+        }
         r = session.get(url, headers=headers, timeout=12)
         
         if r.status_code == 200:
@@ -143,7 +150,7 @@ def scrape_vinted(session, query, silent=False):
             
             if not cards and "zablokowany" in r.text.lower():
                 log_debug("❌ VINTED: Blokada / Captcha (Brak ofert)")
-                return 0
+                return -1 # Zwracamy -1 jako sygnał do resetu sesji
                 
             for card in cards:
                 found += 1
@@ -157,8 +164,10 @@ def scrape_vinted(session, query, silent=False):
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
         elif r.status_code in [403, 429]:
             log_debug(f"❌ VINTED: Blokada IP (Kod {r.status_code})")
+            return -1 # Zwracamy -1 jako sygnał do resetu sesji
     except Exception as e:
         log_debug(f"⚠️ VINTED: Błąd połączenia")
+        return -1
     return found
 
 def process_item(title, url, price, src, silent=False):
@@ -180,9 +189,15 @@ def send_telegram(msg):
     try: requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
     except: pass
 
+def get_new_session():
+    s = requests.Session()
+    # Udajemy świeżą przeglądarkę, żeby ominąć flagi na starej sesji
+    s.headers.update({"User-Agent": random.choice(USER_AGENTS)})
+    return s
+
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.16 - START (Fake Pokemon Block & Anti-Ban)")
-    vs = requests.Session()
+    log_debug("🚀 SNIPER v17.17 - START (Smart Session Reset & Bootleg Block)")
+    vs = get_new_session()
     QUERIES = [
         "psp konsola", "ps vita", "3ds", "gameboy", 
         "booster bundle", "pokemon bundle", "pokemon booster", 
@@ -194,13 +209,37 @@ if __name__ == "__main__":
         scrape_vinted(vs, q, silent=True)
     
     log_debug(f"Gotowe. Baza: {len(SENT_HASHES)} linków.")
+    
+    blocked_count = 0 # Licznik blokad
+    
     while True:
         v_total = o_total = 0
+        vinted_blocked_in_this_loop = False
+        
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
             time.sleep(random.randint(5, 8)) 
-            v_total += scrape_vinted(vs, q)
-            time.sleep(random.randint(15, 25)) # Ważne: Vinted musi mieć czas odetchnąć!
+            
+            if not vinted_blocked_in_this_loop:
+                v_res = scrape_vinted(vs, q)
+                if v_res == -1:
+                    vinted_blocked_in_this_loop = True
+                else:
+                    v_total += v_res
+                    time.sleep(random.randint(15, 25))
+            else:
+                # Omijamy resztę zapytań Vinted, jeśli już dostaliśmy bana w tej pętli
+                pass
+
         log_debug(f"Pętla OK. V({v_total}) O({o_total})")
-        time.sleep(random.randint(45, 90))
+        
+        # Logika resetu po banie
+        if vinted_blocked_in_this_loop:
+            log_debug("🔄 Awaryjny reset sesji Vinted. Czekam 4 minuty przed kolejnym atakiem...")
+            vs.close() # Zamknij starą zbanowaną sesję
+            time.sleep(240) # Odczekaj aż DataDome poluzuje zabezpieczenia (4 minuty)
+            vs = get_new_session() # Otwórz nową, czystą sesję
+            log_debug("✅ Nowa sesja wygenerowana.")
+        else:
+            time.sleep(random.randint(45, 90)) # Standardowa przerwa
