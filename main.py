@@ -11,7 +11,7 @@ BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
 
-# Lista przeglądarek do rotacji
+# Rotacja przeglądarek, żeby Vinted nie dawało bana V(0)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -30,7 +30,7 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # 1. CZARNA LISTA (Rozszerzona o Lego i Chińskie Konsole)
+    # 1. CZARNA LISTA (Absolutna blokada śmieci i podróbek)
     bad_words = [
         # Śmieci/Puste
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
@@ -38,16 +38,20 @@ def is_valid_strict(title, price):
         "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra",
         "bluza", "plush", "plusz", "pluszak", "koszulka", "shirt", "używany kod", "pudełko po",
         
-        # JĘZYKI DO BLOKADY
+        # Języki
         "japanese", "japoński", "japońskie", "japońska", "jp", "jap", 
         "korean", "koreański", "koreańska", "kor",
         "german", "deutsch", "niemiecki", "niemiecka", "niemieckie", " de ",
         "chinese", "chiński", "chińska", "spanish", "hiszpański", "esp",
         "french", "francuski", "it", "italian", "włoski",
         
-        # MYSTERY BOXY I ZAMIENNIKI
+        # CHIŃSKIE KONSOLE I KLOCKI
+        "lego", "r36s", "r36h", "r35s", "miyoo", "anbernic", "trimui", "rg35xx",
+        
+        # PODRÓBKI POKEMON / MYSTERY BOXY
         "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack",
-        "lego", "r36s", "r36h", "r35s", "miyoo", "anbernic", "trimui"
+        "destined rivals", "perfect order", "gem pack", "brilliant fantasy", 
+        "mega evolution", "proxy", "diy", "custom", "aliexpress", "temu", "zamiennik", "replika"
     ]
     
     if any(x in t_f for x in bad_words):
@@ -96,7 +100,6 @@ def is_valid_strict(title, price):
         "GB": 80, "PSP": 80, "PSP_GO": 150, "VITA": 180, "3DS": 120, "DS": 70
     }
     
-    # Anty-Single (Karty)
     if any(x in t_f for x in ["kort", "karta", "card"]) and price < 50:
         if "slab" not in t_f and "graded" not in t_f:
             return False, None
@@ -138,7 +141,6 @@ def scrape_vinted(session, query, silent=False):
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
             
-            # Dodatkowa detekcja zabezpieczeń Vinted na statusie 200
             if not cards and "zablokowany" in r.text.lower():
                 log_debug("❌ VINTED: Blokada / Captcha (Brak ofert)")
                 return 0
@@ -179,7 +181,7 @@ def send_telegram(msg):
     except: pass
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.15 - START (Vinted Fix & UA Rotation)")
+    log_debug("🚀 SNIPER v17.16 - START (Fake Pokemon Block & Anti-Ban)")
     vs = requests.Session()
     QUERIES = [
         "psp konsola", "ps vita", "3ds", "gameboy", 
@@ -197,8 +199,8 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
-            time.sleep(random.randint(5, 10))  # OLX lekko zwolniony
+            time.sleep(random.randint(5, 8)) 
             v_total += scrape_vinted(vs, q)
-            time.sleep(random.randint(15, 25)) # Vinted mocno zwolnione (anty-ban)
+            time.sleep(random.randint(15, 25)) # Ważne: Vinted musi mieć czas odetchnąć!
         log_debug(f"Pętla OK. V({v_total}) O({o_total})")
-        time.sleep(random.randint(45, 90)) # Przerwa między pętlami
+        time.sleep(random.randint(45, 90))
