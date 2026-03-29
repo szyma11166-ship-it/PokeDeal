@@ -17,7 +17,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:123.0) Gecko/20100101 Firefox/123.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
 ]
 
 def log_debug(msg):
@@ -45,16 +45,25 @@ def is_valid_strict(title, price):
         "chinese", "chiński", "chińska", "spanish", "hiszpański", "esp",
         "french", "francuski", "it", "italian", "włoski",
         
+        # Gry (odrzucamy same cartridge, żeby łapać konsole)
+        " gra", "gry ", "igre", "hry", "spil", "juego", "jeu", "cartridge", "kasetka", "kassette",
+        "zelda", "mario", "pokemon y", "pokemon x", "pokemon sun", "pokemon moon", "fantasy life",
+        "animal crossing", "žárovky",
+        
         # CHIŃSKIE KONSOLE I KLOCKI
-        "lego", "r36s", "r36h", "r35s", "miyoo", "anbernic", "trimui", "rg35xx",
+        "lego", "r36s", "r36h", "r35s", "r36x", "miyoo", "anbernic", "trimui", "rg35xx",
         
         # PODRÓBKI POKEMON / MYSTERY BOXY / BOOTLEGI
         "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack",
         "destined rivals", "perfect order", "gem pack", "brilliant fantasy", "ascended heroes",
         "mega evolution", "proxy", "diy", "custom", "aliexpress", "temu", "zamiennik", "replika",
-        "bootleg", "repro", "reprodukcja"
+        "bootleg", "repro", "reprodukcja", "journey together"
     ]
     
+    # Sprawdzenie słowa 'game' ale z przepuszczeniem 'game boy' i 'gameboy'
+    if "game" in t_f and "gameboy" not in t_f and "game boy" not in t_f and "gamecube" not in t_f:
+        return False, None
+
     if any(x in t_f for x in bad_words):
         return False, None
 
@@ -126,8 +135,6 @@ def scrape_olx(query, silent=False):
                 p_data = o.get('price', {}).get('value', {}) or o.get('price', {})
                 p = p_data.get('amount')
                 if p: process_item(o['title'], o['url'], float(p), "OLX", silent)
-        elif r.status_code == 403:
-            log_debug("❌ OLX: 403 (ZABLOKOWANE IP)")
     except: pass
     return found
 
@@ -148,9 +155,11 @@ def scrape_vinted(session, query, silent=False):
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
             
-            if not cards and "zablokowany" in r.text.lower():
-                log_debug("❌ VINTED: Blokada / Captcha (Brak ofert)")
-                return -1 # Zwracamy -1 jako sygnał do resetu sesji
+            # Zaawansowane wykrywanie cichego bana (Cloudflare/DataDome)
+            text_lower = r.text.lower()
+            if not cards and any(x in text_lower for x in ["zablokowany", "datadome", "captcha", "security", "cloudflare"]):
+                log_debug("❌ VINTED: Wykryto cichego bana (Brak ofert + Captcha)")
+                return -1
                 
             for card in cards:
                 found += 1
@@ -162,11 +171,12 @@ def scrape_vinted(session, query, silent=False):
                 if link and p_match:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
-        elif r.status_code in [403, 429]:
-            log_debug(f"❌ VINTED: Blokada IP (Kod {r.status_code})")
-            return -1 # Zwracamy -1 jako sygnał do resetu sesji
+                    
+        elif r.status_code in [403, 429, 401]:
+            log_debug(f"❌ VINTED: Jawna blokada IP (Kod {r.status_code})")
+            return -1
+            
     except Exception as e:
-        log_debug(f"⚠️ VINTED: Błąd połączenia")
         return -1
     return found
 
@@ -191,12 +201,11 @@ def send_telegram(msg):
 
 def get_new_session():
     s = requests.Session()
-    # Udajemy świeżą przeglądarkę, żeby ominąć flagi na starej sesji
     s.headers.update({"User-Agent": random.choice(USER_AGENTS)})
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.17 - START (Smart Session Reset & Bootleg Block)")
+    log_debug("🚀 SNIPER v17.18 - START (Deep Sleep Anti-Ban & Game Filter)")
     vs = get_new_session()
     QUERIES = [
         "psp konsola", "ps vita", "3ds", "gameboy", 
@@ -210,8 +219,6 @@ if __name__ == "__main__":
     
     log_debug(f"Gotowe. Baza: {len(SENT_HASHES)} linków.")
     
-    blocked_count = 0 # Licznik blokad
-    
     while True:
         v_total = o_total = 0
         vinted_blocked_in_this_loop = False
@@ -219,7 +226,7 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
-            time.sleep(random.randint(5, 8)) 
+            time.sleep(random.randint(5, 10)) 
             
             if not vinted_blocked_in_this_loop:
                 v_res = scrape_vinted(vs, q)
@@ -227,19 +234,17 @@ if __name__ == "__main__":
                     vinted_blocked_in_this_loop = True
                 else:
                     v_total += v_res
-                    time.sleep(random.randint(15, 25))
+                    time.sleep(random.randint(20, 30)) # Zwolnione tempo zapytań
             else:
-                # Omijamy resztę zapytań Vinted, jeśli już dostaliśmy bana w tej pętli
                 pass
 
         log_debug(f"Pętla OK. V({v_total}) O({o_total})")
         
-        # Logika resetu po banie
         if vinted_blocked_in_this_loop:
-            log_debug("🔄 Awaryjny reset sesji Vinted. Czekam 4 minuty przed kolejnym atakiem...")
-            vs.close() # Zamknij starą zbanowaną sesję
-            time.sleep(240) # Odczekaj aż DataDome poluzuje zabezpieczenia (4 minuty)
-            vs = get_new_session() # Otwórz nową, czystą sesję
-            log_debug("✅ Nowa sesja wygenerowana.")
+            log_debug("🔄 Awaryjny tryb ochrony! Vinted jest agresywne. Usypiam bota na 15 minut...")
+            vs.close()
+            time.sleep(900) # Głęboki reset: 15 minut czekania
+            vs = get_new_session()
+            log_debug("✅ Wybudzono z nową sesją. Wznawiam polowanie.")
         else:
-            time.sleep(random.randint(45, 90)) # Standardowa przerwa
+            time.sleep(random.randint(60, 120))
