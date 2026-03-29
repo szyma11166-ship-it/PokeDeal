@@ -24,36 +24,28 @@ PROXY_LIST = [
     "http://atftxamf:1p1a9yoim27z@31.58.9.4:6077"
 ]
 
-USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"]
+USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"]
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_valid_strict(title, price):
     t_f = title.lower()
-    
-    # 1. CZARNA LISTA
-    bad_words = ["otwarte", "box only", "pusta", "pusty", "goala", "bez konsoli", "sama góra", "bluza", "pluszak", "shirt", "niemiecki", "german", "kasetka", "fifa", "pes 20", "mystery box", "replika", "repro"]
-    if any(x in t_f for x in bad_words):
-        return False, None, "Blacklist"
+    bad = ["otwarte", "box only", "pusta", "pusty", "goala", "bez konsoli", "sama góra", "mystery box", "replika", "repro"]
+    if any(x in t_f for x in bad): return False, None, "Blacklist"
 
-    # 2. KATEGORYZACJA
     cat = None
     if any(x in t_f for x in ["psp go", "psp-go"]): cat = "PSP_GO"
-    elif any(x in t_f for x in ["ps vita", "psvita", "pstv"]): cat = "VITA"
+    elif any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
     elif "psp" in t_f: cat = "PSP"
     elif any(x in t_f for x in ["3ds", "2ds", "n3ds"]): cat = "3DS"
     elif any(x in t_f for x in ["gameboy", "game boy", "gba", "gbc", "advance"]): cat = "GB"
     elif any(x in t_f for x in ["booster", "bundle", "etb", "display", "sealed"]): cat = "POKE"
     
-    if not cat: return False, None, "No Category Match"
+    if not cat: return False, None, "No Category"
 
-    # 3. CENY (Weryfikacja okazji)
-    limits = {"POKE": 300, "GB": 350, "PSP": 300, "PSP_GO": 450, "VITA": 550, "3DS": 550}
-    min_p = {"POKE": 20, "GB": 40, "PSP": 40, "PSP_GO": 80, "VITA": 100, "3DS": 80}
-    
-    if price > limits.get(cat, 999): return False, cat, f"Price too high ({price} > {limits.get(cat)})"
-    if price < min_p.get(cat, 0): return False, cat, f"Price too low ({price} < {min_p.get(cat)})"
+    limits = {"POKE": 350, "GB": 400, "PSP": 350, "PSP_GO": 500, "VITA": 600, "3DS": 600}
+    if price > limits.get(cat, 999) or price < 15: return False, cat, f"Price Check ({price}zł)"
     
     return True, cat, "OK"
 
@@ -61,39 +53,43 @@ def scrape_olx(query, silent=False):
     found = 0
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&t={int(time.time())}"
-        r = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=12)
+        r = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=10)
         if r.status_code == 200:
-            data = r.json().get('data', [])
-            for i, o in enumerate(data):
+            items = r.json().get('data', [])
+            for i, o in enumerate(items):
                 found += 1
-                title = o['title']
-                url_item = o['url']
+                title = o.get('title', 'No Title')
+                url_item = o.get('url', '')
                 
-                # Wyciąganie ceny (poprawione)
-                p_raw = o.get('price', {})
+                # --- NUCLEAR PRICE FINDER ---
+                p_obj = o.get('price', {})
                 price = None
-                if 'regularPrice' in p_raw: price = p_raw['regularPrice'].get('value')
-                elif 'value' in p_raw: price = p_raw['value']
                 
+                # Próbujemy różnych ścieżek w JSONie OLX
+                if 'regularPrice' in p_obj: price = p_obj['regularPrice'].get('value')
+                if price is None and 'value' in p_obj: price = p_obj['value']
+                if price is None: # Szukamy głębiej
+                    for key in ['total', 'amount', 'price']:
+                        if key in p_obj:
+                            val = p_obj[key]
+                            if isinstance(val, (int, float)): price = val; break
+                            if isinstance(val, dict): price = val.get('value'); break
+
+                # DIAGNOSTYKA (Zawsze dla pierwszego przedmiotu w pętli)
+                if i == 0 and not silent:
+                    log_debug(f"🔍 OLX DEBUG [{query}]: '{title[:25]}' | RawPrice: {p_obj}")
+
                 if price is not None:
-                    price = float(price)
-                    valid, cat, reason = is_valid_strict(title, price)
-                    
-                    # DIAGNOSTYKA: Pokaż pierwsze ogłoszenie z pętli, jeśli nic nie wysłano
-                    if i == 0 and not silent:
-                        log_debug(f"🔍 OLX PEEK [{query}]: '{title[:30]}' | {price}zł | Status: {reason}")
-                        
-                    if valid:
-                        process_item(title, url_item, price, "OLX", silent)
+                    process_item(title, url_item, float(price), "OLX", silent)
     except Exception as e:
-        log_debug(f"❌ OLX Error: {e}")
+        log_debug(f"❌ OLX Critical: {e}")
     return found
 
 def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
-        r = session.get(url, timeout=12)
+        r = session.get(url, timeout=10)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
@@ -113,18 +109,19 @@ def scrape_vinted(session, query, silent=False):
 
 def process_item(title, url, price, src, silent=False):
     clean_url = url.split("?")[0].rstrip("/")
-    item_hash = hashlib.md5(f"{title[:50]}_{int(price)}".encode()).hexdigest()
-    if item_hash in SENT_HASHES or clean_url in SENT_HASHES: return False
+    h = hashlib.md5(f"{title[:40]}_{int(price)}".encode()).hexdigest()
+    if h in SENT_HASHES or clean_url in SENT_HASHES: return False
     
     valid, cat, reason = is_valid_strict(title, price)
     if not valid: return False
     
     if not silent:
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                      data={"chat_id": CHAT_ID, "text": f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})", "parse_mode": "Markdown"})
+                      data={"chat_id": CHAT_ID, "text": f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [OTWÓRZ]({clean_url})", "parse_mode": "Markdown"})
         log_debug(f"🔥 WYSŁANO: {title[:30]}... ({price:.2f} zł)")
     
-    SENT_HASHES.update([item_hash, clean_url])
+    SENT_HASHES.add(h)
+    SENT_HASHES.add(clean_url)
     return True
 
 def get_new_session():
@@ -132,15 +129,15 @@ def get_new_session():
     px = random.choice(PROXY_LIST)
     s.proxies.update({"http": px, "https": px})
     s.headers.update({"User-Agent": random.choice(USER_AGENTS)})
-    log_debug(f"🌐 Nowe IP: {px.split('@')[-1]}")
+    log_debug(f"🌐 IP: {px.split('@')[-1]}")
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.25 - Diagnostyka OLX")
+    log_debug("🚀 SNIPER v17.26 - Nuclear OLX Fix")
     vs = get_new_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "pokemon bundle", "pokemon booster"]
     
-    # Cold start (bez powiadomień)
+    # Cold Start
     for q in QUERIES:
         scrape_olx(q, silent=True)
         scrape_vinted(vs, q, silent=True)
@@ -151,7 +148,7 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
-            time.sleep(random.randint(4, 7))
+            time.sleep(random.randint(3, 5))
             if not v_blocked:
                 res = scrape_vinted(vs, q)
                 if res == -1: v_blocked = True
@@ -160,9 +157,8 @@ if __name__ == "__main__":
         
         log_debug(f"Pętla OK. V({v_total}) O({o_total})")
         if v_blocked:
-            log_debug("🔄 Zmiana Proxy...")
-            vs.close()
-            vs = get_new_session()
+            log_debug("🔄 Proxy Switch...")
+            vs.close(); vs = get_new_session()
             time.sleep(5)
         else:
             time.sleep(random.randint(30, 60))
