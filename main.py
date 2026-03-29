@@ -24,20 +24,25 @@ PROXY_LIST = [
     "http://atftxamf:1p1a9yoim27z@31.58.9.4:6077"
 ]
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-]
+USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"]
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_valid_strict(title, price):
     t_f = title.lower()
-    bad = ["otwarte", "box only", "pusta", "pusty", "goala", "bez konsoli", "mystery box", "replika", "repro"]
-    if any(x in t_f for x in bad): return False, None
     
+    # Rozszerzona czarna lista na akcesoria i usługi
+    bad = [
+        "otwarte", "box only", "pusta", "pusty", "goala", "mystery box", "replika", "repro",
+        "ładowarka", "kabel", "etui", "pokrowiec", "case", "serwis", "naprawa", "modyfikacja",
+        "odblokowanie", " przeróbka", "części", "uszkodzona", "uszkodzone", "display only",
+        "czytnik", "r36s", "anbernic", "data frog", "zamienię", "wymiana"
+    ]
+    
+    if any(x in t_f for x in bad): return False, None
+    if price <= 5: return False, None # Ignoruj ceny 0 i 1-5 zł (spam)
+
     cat = None
     if any(x in t_f for x in ["psp go", "psp-go"]): cat = "PSP_GO"
     elif any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
@@ -48,8 +53,10 @@ def is_valid_strict(title, price):
     
     if not cat: return False, None
     
+    # Limity cenowe (możesz dostosować)
     limits = {"POKE": 400, "GB": 450, "PSP": 350, "PSP_GO": 550, "VITA": 650, "3DS": 650}
-    if price > limits.get(cat, 999) or price < 15: return False, None
+    if price > limits.get(cat, 999): return False, None
+    
     return True, cat
 
 def scrape_olx(query, silent=False):
@@ -59,32 +66,21 @@ def scrape_olx(query, silent=False):
         r = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=10)
         if r.status_code == 200:
             items = r.json().get('data', [])
-            for i, o in enumerate(items):
+            for o in items:
                 found += 1
                 title = o.get('title', '')
                 url_item = o.get('url', '')
                 price = None
                 
-                # --- NOWA LOGIKA SZUKANIA CENY W PARAMS ---
-                params = o.get('params', [])
-                for p in params:
+                # Przeszukiwanie parametrów pod kątem ceny
+                for p in o.get('params', []):
                     if p.get('key') == 'price':
                         val = p.get('value', {})
-                        if isinstance(val, dict):
-                            price = val.get('value')
+                        if isinstance(val, dict): price = val.get('value')
                 
-                # Fallback do starej metody, jeśli params zawiedzie
-                if price is None:
-                    p_obj = o.get('price', {})
-                    price = p_obj.get('regularPrice', {}).get('value') or p_obj.get('value')
-
-                if i == 0 and not silent:
-                    log_debug(f"🔍 OLX CHECK [{query}]: '{title[:20]}' | Price found: {price}")
-
-                if price:
+                if price is not None:
                     process_item(title, url_item, float(price), "OLX", silent)
-    except Exception as e:
-        log_debug(f"❌ OLX Error: {e}")
+    except: pass
     return found
 
 def scrape_vinted(session, query, silent=False):
@@ -122,8 +118,7 @@ def process_item(title, url, price, src, silent=False):
                       data={"chat_id": CHAT_ID, "text": f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})", "parse_mode": "Markdown"})
         log_debug(f"🔥 WYSŁANO: {title[:30]}... ({price:.2f} zł)")
     
-    SENT_HASHES.add(h)
-    SENT_HASHES.add(clean_url)
+    SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
     return True
 
 def get_new_session():
@@ -134,11 +129,10 @@ def get_new_session():
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.27 - OLX Params Fix")
+    log_debug("🚀 SNIPER v17.28 - Deep Filtering Active")
     vs = get_new_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "pokemon bundle", "pokemon booster"]
     
-    # Cold Start
     for q in QUERIES:
         scrape_olx(q, silent=True)
         scrape_vinted(vs, q, silent=True)
@@ -149,17 +143,17 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
-            time.sleep(random.randint(3, 6))
+            time.sleep(random.randint(4, 8))
             if not v_blocked:
                 res = scrape_vinted(vs, q)
                 if res == -1: v_blocked = True
                 else: v_total += res
-                time.sleep(random.randint(10, 15))
+                time.sleep(random.randint(12, 18))
         
-        log_debug(f"Pętla OK. V({v_total}) O({o_total})")
+        log_debug(f"Status OK: V({v_total}) O({o_total}). Baza: {len(SENT_HASHES)}")
         if v_blocked:
-            log_debug("🔄 Zmiana IP...")
+            log_debug("🔄 Blokada Vinted -> Zmiana IP")
             vs.close(); vs = get_new_session()
             time.sleep(10)
         else:
-            time.sleep(random.randint(30, 60))
+            time.sleep(random.randint(40, 70))
