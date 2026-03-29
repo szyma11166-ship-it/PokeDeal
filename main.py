@@ -102,9 +102,22 @@ def scrape_olx(query, silent=False):
         if r.status_code == 200:
             for o in r.json().get('data', []):
                 found += 1
-                p = (o.get('price', {}).get('value', {}) or o.get('price', {})).get('amount')
-                if p: process_item(o['title'], o['url'], float(p), "OLX", silent)
-    except: pass
+                
+                # --- NAPRAWIONE POBIERANIE CENY Z OLX ---
+                price_data = o.get('price', {})
+                p = None
+                
+                if isinstance(price_data, dict):
+                    # Sprawdzamy nowy format OLX (regularPrice) oraz stary (value)
+                    if 'regularPrice' in price_data:
+                        p = price_data.get('regularPrice', {}).get('value')
+                    elif 'value' in price_data:
+                        p = price_data.get('value')
+                
+                if p is not None: 
+                    process_item(o['title'], o['url'], float(p), "OLX", silent)
+    except Exception as e:
+        log_debug(f"OLX Error: {e}")
     return found
 
 def scrape_vinted(session, query, silent=False):
