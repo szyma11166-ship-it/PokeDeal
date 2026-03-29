@@ -24,16 +24,20 @@ PROXY_LIST = [
     "http://atftxamf:1p1a9yoim27z@31.58.9.4:6077"
 ]
 
-USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"]
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+]
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_valid_strict(title, price):
     t_f = title.lower()
-    bad = ["otwarte", "box only", "pusta", "pusty", "goala", "bez konsoli", "sama góra", "mystery box", "replika", "repro"]
-    if any(x in t_f for x in bad): return False, None, "Blacklist"
-
+    bad = ["otwarte", "box only", "pusta", "pusty", "goala", "bez konsoli", "mystery box", "replika", "repro"]
+    if any(x in t_f for x in bad): return False, None
+    
     cat = None
     if any(x in t_f for x in ["psp go", "psp-go"]): cat = "PSP_GO"
     elif any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
@@ -42,12 +46,11 @@ def is_valid_strict(title, price):
     elif any(x in t_f for x in ["gameboy", "game boy", "gba", "gbc", "advance"]): cat = "GB"
     elif any(x in t_f for x in ["booster", "bundle", "etb", "display", "sealed"]): cat = "POKE"
     
-    if not cat: return False, None, "No Category"
-
-    limits = {"POKE": 350, "GB": 400, "PSP": 350, "PSP_GO": 500, "VITA": 600, "3DS": 600}
-    if price > limits.get(cat, 999) or price < 15: return False, cat, f"Price Check ({price}zł)"
+    if not cat: return False, None
     
-    return True, cat, "OK"
+    limits = {"POKE": 400, "GB": 450, "PSP": 350, "PSP_GO": 550, "VITA": 650, "3DS": 650}
+    if price > limits.get(cat, 999) or price < 15: return False, None
+    return True, cat
 
 def scrape_olx(query, silent=False):
     found = 0
@@ -58,31 +61,30 @@ def scrape_olx(query, silent=False):
             items = r.json().get('data', [])
             for i, o in enumerate(items):
                 found += 1
-                title = o.get('title', 'No Title')
+                title = o.get('title', '')
                 url_item = o.get('url', '')
-                
-                # --- NUCLEAR PRICE FINDER ---
-                p_obj = o.get('price', {})
                 price = None
                 
-                # Próbujemy różnych ścieżek w JSONie OLX
-                if 'regularPrice' in p_obj: price = p_obj['regularPrice'].get('value')
-                if price is None and 'value' in p_obj: price = p_obj['value']
-                if price is None: # Szukamy głębiej
-                    for key in ['total', 'amount', 'price']:
-                        if key in p_obj:
-                            val = p_obj[key]
-                            if isinstance(val, (int, float)): price = val; break
-                            if isinstance(val, dict): price = val.get('value'); break
+                # --- NOWA LOGIKA SZUKANIA CENY W PARAMS ---
+                params = o.get('params', [])
+                for p in params:
+                    if p.get('key') == 'price':
+                        val = p.get('value', {})
+                        if isinstance(val, dict):
+                            price = val.get('value')
+                
+                # Fallback do starej metody, jeśli params zawiedzie
+                if price is None:
+                    p_obj = o.get('price', {})
+                    price = p_obj.get('regularPrice', {}).get('value') or p_obj.get('value')
 
-                # DIAGNOSTYKA (Zawsze dla pierwszego przedmiotu w pętli)
                 if i == 0 and not silent:
-                    log_debug(f"🔍 OLX DEBUG [{query}]: '{title[:25]}' | RawPrice: {p_obj}")
+                    log_debug(f"🔍 OLX CHECK [{query}]: '{title[:20]}' | Price found: {price}")
 
-                if price is not None:
+                if price:
                     process_item(title, url_item, float(price), "OLX", silent)
     except Exception as e:
-        log_debug(f"❌ OLX Critical: {e}")
+        log_debug(f"❌ OLX Error: {e}")
     return found
 
 def scrape_vinted(session, query, silent=False):
@@ -97,7 +99,7 @@ def scrape_vinted(session, query, silent=False):
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ").lower()
-                if any(x in txt for x in ["dni", "days", "vakar"]): continue
+                if any(x in txt for x in ["dni", "days"]): continue
                 link = card.find("a", href=True)
                 p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
                 if link and p_match:
@@ -112,12 +114,12 @@ def process_item(title, url, price, src, silent=False):
     h = hashlib.md5(f"{title[:40]}_{int(price)}".encode()).hexdigest()
     if h in SENT_HASHES or clean_url in SENT_HASHES: return False
     
-    valid, cat, reason = is_valid_strict(title, price)
+    valid, cat = is_valid_strict(title, price)
     if not valid: return False
     
     if not silent:
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                      data={"chat_id": CHAT_ID, "text": f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [OTWÓRZ]({clean_url})", "parse_mode": "Markdown"})
+                      data={"chat_id": CHAT_ID, "text": f"🎯 *HIT {src}*\n📦 *{title[:75]}*\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})", "parse_mode": "Markdown"})
         log_debug(f"🔥 WYSŁANO: {title[:30]}... ({price:.2f} zł)")
     
     SENT_HASHES.add(h)
@@ -129,11 +131,10 @@ def get_new_session():
     px = random.choice(PROXY_LIST)
     s.proxies.update({"http": px, "https": px})
     s.headers.update({"User-Agent": random.choice(USER_AGENTS)})
-    log_debug(f"🌐 IP: {px.split('@')[-1]}")
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.26 - Nuclear OLX Fix")
+    log_debug("🚀 SNIPER v17.27 - OLX Params Fix")
     vs = get_new_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "pokemon bundle", "pokemon booster"]
     
@@ -148,7 +149,7 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             o_total += scrape_olx(q)
-            time.sleep(random.randint(3, 5))
+            time.sleep(random.randint(3, 6))
             if not v_blocked:
                 res = scrape_vinted(vs, q)
                 if res == -1: v_blocked = True
@@ -157,8 +158,8 @@ if __name__ == "__main__":
         
         log_debug(f"Pętla OK. V({v_total}) O({o_total})")
         if v_blocked:
-            log_debug("🔄 Proxy Switch...")
+            log_debug("🔄 Zmiana IP...")
             vs.close(); vs = get_new_session()
-            time.sleep(5)
+            time.sleep(10)
         else:
             time.sleep(random.randint(30, 60))
