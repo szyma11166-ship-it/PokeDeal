@@ -12,10 +12,7 @@ CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
 
 # Wklej tutaj swoje proxy (np. z darmowego Webshare)
-# Format: "http://username:password@ip:port"
-PROXY_LIST = [
-    # "http://twoj_login:twoje_haslo@p.webshare.io:80", 
-]
+PROXY_LIST = []
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36",
@@ -34,28 +31,35 @@ def get_hash(title, price):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # 1. CZARNA LISTA
+    # 1. LUŹNIEJSZA CZARNA LISTA (v17.21)
     bad_words = [
+        # Puste / Śmieci (To zostaje, nie chcemy pustych pudełek)
         "otwarte", "otwarty", "otwarta", "open", "opened", "nincs", "üres", 
-        "empty", "box only", "puste", "goala", "cutie goala", "fara", "tom", 
-        "without boosters", "nincs benne", "no console", "bez konsoli", "sama góra",
+        "empty", "box only", "pusta", "pusty", "puste", "pustą", "goala", "goale", 
+        "cutie goala", "fara", "tom", "without boosters", "nincs benne", 
+        "no console", "bez konsoli", "bez kart", "bez kartek", "sama góra",
         "bluza", "plush", "plusz", "pluszak", "koszulka", "shirt", "używany kod", "pudełko po",
-        "japanese", "japoński", "japońskie", "jp", "jap", "korean", "koreański", "kor",
-        "german", "deutsch", "niemiecki", " de ", "chinese", "chiński", "spanish", "hiszpański", "esp",
+        
+        # Języki (Odrzucamy tylko te, które w PL źle się sprzedają. Japoński i Koreański w Pokemonach PUSZCZAMY)
+        "german", "deutsch", "niemiecki", " de ", "spanish", "hiszpański", "esp",
         "french", "francuski", "it", "italian", "włoski", "kártya", "magyar",
-        " gra", "gry ", "igre", "hry", "spil", "juego", "jeu", "cartridge", "kasetka", "kassette",
-        "zelda", "mario", "pokemon y", "pokemon x", "pokemon sun", "pokemon moon", "fantasy life",
-        "animal crossing", "žárovky",
+        
+        # Sam nośnik gry (Zamiast blokować tytuły, blokujemy określenia fizycznego nośnika i sportówki)
+        "cartridge", "kasetka", "kassette", "fifa", "pes 20",
+        
+        # Chińskie konsole (Zostawiamy, to tani złom)
         "lego", "r36s", "r36h", "r35s", "r36x", "miyoo", "anbernic", "trimui", "rg35xx", "fx40", "fx 40",
+        
+        # Kosmetyki (booster)
+        "cosmetics", "kosmetyki", "serum", "reedle", "krem", "vt cosmetics",
+        
+        # Podróbki / Custom
         "mystery", "mystery box", "niespodzianka", "paczka niespodzianka", "repack",
         "destined rivals", "perfect order", "gem pack", "brilliant fantasy", "ascended heroes",
-        "mega evolution", "glory of", "super electric", "proxy", "diy", "custom", "aliexpress", 
+        "mega evolution", "mega heroes", "glory of", "super electric", "proxy", "diy", "custom", "aliexpress", 
         "temu", "zamiennik", "replika", "bootleg", "repro", "reprodukcja", "journey together",
         "trick or trade", "celebrations 25"
     ]
-    
-    if "game" in t_f and "gameboy" not in t_f and "game boy" not in t_f and "gamecube" not in t_f:
-        return False, None
 
     if any(x in t_f for x in bad_words):
         return False, None
@@ -79,8 +83,9 @@ def is_valid_strict(title, price):
     
     if not cat: return False, None
     
+    # OBNIŻONE CENY MINIMALNE (Łowienie absolutnych perełek od nieświadomych sprzedawców)
     limits = {"POKE_ETB": 250, "POKE_FIRST": 150, "POKE_DAY": 80, "POKE_GEN": 200, "GB": 300, "PSP": 300, "PSP_GO": 350, "VITA": 500, "3DS": 500, "DS": 250}
-    min_p = {"POKE_ETB": 95, "POKE_FIRST": 30, "POKE_DAY": 15, "POKE_GEN": 35, "GB": 80, "PSP": 80, "PSP_GO": 150, "VITA": 180, "3DS": 120, "DS": 70}
+    min_p = {"POKE_ETB": 50, "POKE_FIRST": 15, "POKE_DAY": 10, "POKE_GEN": 15, "GB": 40, "PSP": 40, "PSP_GO": 80, "VITA": 80, "3DS": 60, "DS": 40}
     
     if any(x in t_f for x in ["kort", "karta", "card"]) and price < 50:
         if "slab" not in t_f and "graded" not in t_f:
@@ -112,7 +117,6 @@ def scrape_vinted(session, query, silent=False):
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
             
-            # WYKRYWANIE CICHEGO BANA - Jeśli nie ma żadnych kart, a szukamy popularnej rzeczy, to ban.
             if not cards:
                 log_debug(f"❌ VINTED: Cichy ban (0 ofert dla '{query}')")
                 return -1
@@ -159,7 +163,7 @@ def get_new_session():
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.19 - Proxy Ready & Ghost Ban Fix")
+    log_debug("🚀 SNIPER v17.21 - Wide Net (Catching the Grube Okazje)")
     vs = get_new_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "booster bundle", "pokemon bundle", "pokemon booster", "shrouded fable", "pokemon day", "pokemon 30th"]
     log_debug("Cold Start...")
