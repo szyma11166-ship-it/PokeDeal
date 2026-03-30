@@ -24,13 +24,20 @@ def is_interesting_item(title, price):
     if any(x in t_f for x in absolute_trash):
         return False, "ABSOLUTE_TRASH"
 
-    # 2. DEFINICJA KATEGORII I LIMITÓW
+    # 2. FILTR JĘZYKOWY (Działa na wszystko: Karty i Konsole)
+    # Wywalamy śmieciowe języki na starcie
+    bad_languages = ["jap", "japonskie", "japanese", "kor", "korean", "koreanskie", "fr", "it", "de", "niemieckie", "wloskie"]
+    if any(x in t_f for x in bad_languages):
+        return False, "BAD_LANGUAGE"
+
+    # 3. DEFINICJA KATEGORII
     cat = None
     
     # --- POKEMON TCG LOGIC ---
     if "pokemon" in t_f:
         if any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
-        elif any(x in t_f for x in ["booster"]): cat = "TCG_DISPLAY"
+        elif "booster box" in t_f or "display" in t_f: cat = "TCG_DISPLAY" # Tylko całe boxy
+        elif "booster" in t_f: cat = "TCG_PACK" # Pojedyncze paczki
         elif "bundle" in t_f: cat = "TCG_BUNDLE"
         elif "tin" in t_f: cat = "TCG_TIN"
         elif "partner illustration" in t_f: cat = "TCG_PAR"
@@ -48,22 +55,31 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CATEGORY"
 
-    # 3. FILTRY MIĘKKIE (Dla konsol, żeby nie łapać samych gier)
+    # 4. FILTRY MIĘKKIE (Tylko dla konsol)
     if "TCG_" not in cat:
         priority_keywords = ["konsola", "v2", "oled", "lite", "classic", "fat", "slim", "pch-", "3004", "2004", "1004"]
-        trash_keywords = ["gra", "gry", "game", "joc", "zaidimai", "spiel", "jeu", "mario", "zelda", "fifa", "gta", "jap", "japonskie", "japanese", "kor", "korean", "koreanskie", "fr", "it", "de", "niemieckie", "wloskie"]
+        trash_keywords = ["gra", "gry", "game", "joc", "zaidimai", "spiel", "jeu", "mario", "zelda", "fifa", "gta"]
         has_priority = any(x in t_f for x in priority_keywords)
         has_trash = any(x in t_f for x in trash_keywords)
         if has_trash and not has_priority: return False, "CONSOLE_GAME_SKIP"
 
-    # 4. LIMITY CENOWE (Konsole + TCG)
+    # 5. NOWE LIMITY CENOWE (Poprawione TCG_DISPLAY i TCG_PACK)
     limits = {
         "GB": 300, "PSP": 250, "VITA": 650, "3DS": 450, "N3DS": 650, "2DS": 400, "DSI": 200, "DS": 150,
-        "TCG_ETB": 250, "TCG_DISPLAY": 30, "TCG_BUNDLE": 150, "TCG_TIN": 120, "TCG_PAR": 150
+        "TCG_ETB": 250, 
+        "TCG_DISPLAY": 600, # Cały box
+        "TCG_PACK": 40,    # Pojedynczy booster
+        "TCG_BUNDLE": 150, 
+        "TCG_TIN": 120, 
+        "TCG_PAR": 150
     }
     
-    if price < 80: return False, "TOO_CHEAP"
-    if price > limits.get(cat, 999): return False, "OVER_PRICED"
+    # Dół zostawiamy bez zmian
+    if price < 80 and cat != "TCG_PACK": # Obniżka progu tylko dla paczek kart
+        return False, "TOO_CHEAP"
+        
+    if price > limits.get(cat, 999): 
+        return False, "OVER_PRICED"
 
     return True, cat
 
