@@ -126,18 +126,24 @@ def process_item(title, url, price, src, silent=False):
     return True
 
 def get_new_cffi_session():
-    # Tworzymy sesję używając curl_cffi z trybem 'impersonate'
     px = random.choice(PROXY_LIST)
     proxies = {"http": px, "https": px}
     
-    # Udajemy przeglądarkę Chrome w wersji 124
-    s = cffi_requests.Session(impersonate="chrome124", proxies=proxies)
+    # EMULACJA APLIKACJI MOBILNEJ (Android Chrome)
+    s = cffi_requests.Session(impersonate="android74", proxies=proxies)
+    
+    s.headers.update({
+        "Accept": "*/*",
+        "Accept-Language": "pl-PL,pl;q=0.9",
+        "X-Requested-With": "com.vinted", # Udajemy zapytanie z apki/web-view
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+    })
     
     try:
         s.get("https://www.vinted.pl/", timeout=10)
-    except:
-        pass
-        
+    except: pass
     return s
 
 if __name__ == "__main__":
