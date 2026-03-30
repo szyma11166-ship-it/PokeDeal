@@ -1,4 +1,5 @@
 import requests
+from curl_cffi import requests as cffi_requests
 from bs4 import BeautifulSoup
 import re
 import time
@@ -29,7 +30,6 @@ def log_debug(msg):
 
 def is_valid_strict(title, price):
     t_f = title.lower()
-    
     bad = [
         "otwarte", "box only", "pusta", "pusty", "goala", "mystery box", "replika", "repro",
         "ładowarka", "kabel", "etui", "pokrowiec", "case", "serwis", "naprawa", "modyfikacja",
@@ -37,7 +37,6 @@ def is_valid_strict(title, price):
         "czytnik", "r36s", "anbernic", "bateria", "styki", "gumki", "klapka", "śrubki", 
         "naklejki", "sticker", "naprawczy", "housing", "obudowa"
     ]
-    
     if any(x in t_f for x in bad): return False, None
     if price <= 10: return False, None 
 
@@ -53,14 +52,13 @@ def is_valid_strict(title, price):
     
     limits = {"POKE": 400, "GB": 450, "PSP": 350, "PSP_GO": 550, "VITA": 650, "3DS": 650}
     if price > limits.get(cat, 999): return False, None
-    
     return True, cat
 
+# OLX zostawiamy na standardowym requests (jest lżejsze i wystarcza)
 def scrape_olx(query, silent=False):
     found = 0
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&t={int(time.time())}"
-        # OLX nie jest tak czuły, zostawiamy proste headery
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
         r = requests.get(url, headers=headers, timeout=12)
         if r.status_code == 200:
@@ -74,23 +72,23 @@ def scrape_olx(query, silent=False):
                     if p.get('key') == 'price':
                         val = p.get('value', {})
                         if isinstance(val, dict): price = val.get('value')
-                
                 if price is not None:
                     process_item(title, url_item, float(price), "OLX", silent)
     except: pass
     return found
 
+# Vinted przechodzi na curl_cffi
 def scrape_vinted(session, query, silent=False):
     found = 0
     try:
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
+        # Używamy sesji z curl_cffi
         r = session.get(url, timeout=15)
         
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
             
-            # Weryfikacja czy strona nie jest blokadą Captchy
             if "datadome" in r.text.lower() or "cloudflare" in r.text.lower():
                 return -1
 
@@ -127,27 +125,14 @@ def process_item(title, url, price, src, silent=False):
     SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
     return True
 
-def get_new_session():
-    s = requests.Session()
+def get_new_cffi_session():
+    # Tworzymy sesję używając curl_cffi z trybem 'impersonate'
     px = random.choice(PROXY_LIST)
-    s.proxies.update({"http": px, "https": px})
+    proxies = {"http": px, "https": px}
     
-    # PEŁNE MASKOWANIE VINTED
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1"
-    })
+    # Udajemy przeglądarkę Chrome w wersji 124
+    s = cffi_requests.Session(impersonate="chrome124", proxies=proxies)
     
-    # Próba zdobycia ciastka przed odpytywaniem
     try:
         s.get("https://www.vinted.pl/", timeout=10)
     except:
@@ -156,13 +141,12 @@ def get_new_session():
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.30 - Vinted Stealth Protocol")
-    vs = get_new_session()
+    log_debug("🚀 SNIPER v17.31 - CFFI TLS Bypass")
+    vs = get_new_cffi_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "pokemon bundle", "pokemon booster"]
     
     for q in QUERIES:
         scrape_olx(q, silent=True)
-        # Omijamy cold start dla Vinted, żeby od razu nie dostać bana
     
     while True:
         v_total = o_total = 0
@@ -179,14 +163,14 @@ if __name__ == "__main__":
                     v_blocked = True
                 else: 
                     v_total += res
-                time.sleep(random.randint(20, 35)) # Jeszcze dłuższa przerwa
+                time.sleep(random.randint(20, 35))
         
         log_debug(f"Pętla OK: V({v_total}) O({o_total}). Baza: {len(SENT_HASHES)}")
         
         if v_blocked or v_total == 0:
-            log_debug("🔄 Vinted Blocked -> Zmiana IP i czyszczenie ciastek...")
+            log_debug("🔄 Vinted Blocked -> Zmiana IP i czyszczenie (CFFI)...")
             vs.close()
             time.sleep(15)
-            vs = get_new_session()
+            vs = get_new_cffi_session()
         else:
             time.sleep(random.randint(60, 120))
