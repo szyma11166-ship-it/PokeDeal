@@ -24,7 +24,13 @@ PROXY_LIST = [
     "http://atftxamf:1p1a9yoim27z@31.58.9.4:6077"
 ]
 
-USER_AGENTS = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"]
+# Większa pula User-Agentów dla Vinted
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/123.0.0.0 Safari/537.36"
+]
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -32,16 +38,17 @@ def log_debug(msg):
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # Rozszerzona czarna lista na akcesoria i usługi
+    # Bardziej rygorystyczna czarna lista (części i akcesoria)
     bad = [
         "otwarte", "box only", "pusta", "pusty", "goala", "mystery box", "replika", "repro",
         "ładowarka", "kabel", "etui", "pokrowiec", "case", "serwis", "naprawa", "modyfikacja",
-        "odblokowanie", " przeróbka", "części", "uszkodzona", "uszkodzone", "display only",
-        "czytnik", "r36s", "anbernic", "data frog", "zamienię", "wymiana"
+        "odblokowanie", "przeróbka", "części", "uszkodzona", "uszkodzone", "display only",
+        "czytnik", "r36s", "anbernic", "bateria", "styki", "gumki", "klapka", "śrubki", 
+        "naklejki", "sticker", "naprawczy", "housing", "obudowa"
     ]
     
     if any(x in t_f for x in bad): return False, None
-    if price <= 5: return False, None # Ignoruj ceny 0 i 1-5 zł (spam)
+    if price <= 10: return False, None 
 
     cat = None
     if any(x in t_f for x in ["psp go", "psp-go"]): cat = "PSP_GO"
@@ -53,7 +60,6 @@ def is_valid_strict(title, price):
     
     if not cat: return False, None
     
-    # Limity cenowe (możesz dostosować)
     limits = {"POKE": 400, "GB": 450, "PSP": 350, "PSP_GO": 550, "VITA": 650, "3DS": 650}
     if price > limits.get(cat, 999): return False, None
     
@@ -63,7 +69,7 @@ def scrape_olx(query, silent=False):
     found = 0
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&t={int(time.time())}"
-        r = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=10)
+        r = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=12)
         if r.status_code == 200:
             items = r.json().get('data', [])
             for o in items:
@@ -71,8 +77,6 @@ def scrape_olx(query, silent=False):
                 title = o.get('title', '')
                 url_item = o.get('url', '')
                 price = None
-                
-                # Przeszukiwanie parametrów pod kątem ceny
                 for p in o.get('params', []):
                     if p.get('key') == 'price':
                         val = p.get('value', {})
@@ -86,24 +90,30 @@ def scrape_olx(query, silent=False):
 def scrape_vinted(session, query, silent=False):
     found = 0
     try:
+        # Vinted wymaga czasami wejścia na główną, żeby ustawić ciastka
+        if random.random() > 0.8: session.get("https://www.vinted.pl/", timeout=10)
+        
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
-        r = session.get(url, timeout=10)
+        r = session.get(url, timeout=12)
+        
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
-            if not cards: return -1
+            if not cards: return 0 # Pusta strona, ale nie błąd
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ").lower()
-                if any(x in txt for x in ["dni", "days"]): continue
+                if any(x in txt for x in ["dni", "days", "vakar"]): continue
                 link = card.find("a", href=True)
                 p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
                 if link and p_match:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
-        else: return -1
-    except: return -1
-    return found
+            return found
+        else:
+            return -1 # Sygnał blokady
+    except:
+        return -1
 
 def process_item(title, url, price, src, silent=False):
     clean_url = url.split("?")[0].rstrip("/")
@@ -125,14 +135,19 @@ def get_new_session():
     s = requests.Session()
     px = random.choice(PROXY_LIST)
     s.proxies.update({"http": px, "https": px})
-    s.headers.update({"User-Agent": random.choice(USER_AGENTS)})
+    s.headers.update({
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.google.com/"
+    })
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.28 - Deep Filtering Active")
+    log_debug("🚀 SNIPER v17.29 - Vinted Recovery Mode")
     vs = get_new_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "pokemon bundle", "pokemon booster"]
     
+    # Cold Start
     for q in QUERIES:
         scrape_olx(q, silent=True)
         scrape_vinted(vs, q, silent=True)
@@ -141,19 +156,27 @@ if __name__ == "__main__":
         v_total = o_total = 0
         v_blocked = False
         random.shuffle(QUERIES)
+        
         for q in QUERIES:
+            # OLX
             o_total += scrape_olx(q)
-            time.sleep(random.randint(4, 8))
+            time.sleep(random.randint(5, 10))
+            
+            # VINTED
             if not v_blocked:
                 res = scrape_vinted(vs, q)
-                if res == -1: v_blocked = True
-                else: v_total += res
-                time.sleep(random.randint(12, 18))
+                if res == -1: 
+                    v_blocked = True
+                else: 
+                    v_total += res
+                time.sleep(random.randint(15, 25)) # Dłuższe przerwy dla Vinted
         
-        log_debug(f"Status OK: V({v_total}) O({o_total}). Baza: {len(SENT_HASHES)}")
-        if v_blocked:
-            log_debug("🔄 Blokada Vinted -> Zmiana IP")
-            vs.close(); vs = get_new_session()
-            time.sleep(10)
+        log_debug(f"Pętla OK: V({v_total}) O({o_total}). Baza: {len(SENT_HASHES)}")
+        
+        if v_blocked or v_total == 0:
+            log_debug("🔄 Vinted Blocked/Empty -> New Identity...")
+            vs.close()
+            vs = get_new_session()
+            time.sleep(20) # Odpoczynek po blokadzie
         else:
-            time.sleep(random.randint(40, 70))
+            time.sleep(random.randint(60, 100)) # Dłuższy czas między pętlami
