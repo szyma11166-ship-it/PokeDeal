@@ -24,21 +24,12 @@ PROXY_LIST = [
     "http://atftxamf:1p1a9yoim27z@31.58.9.4:6077"
 ]
 
-# Większa pula User-Agentów dla Vinted
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/123.0.0.0 Safari/537.36"
-]
-
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_valid_strict(title, price):
     t_f = title.lower()
     
-    # Bardziej rygorystyczna czarna lista (części i akcesoria)
     bad = [
         "otwarte", "box only", "pusta", "pusty", "goala", "mystery box", "replika", "repro",
         "ładowarka", "kabel", "etui", "pokrowiec", "case", "serwis", "naprawa", "modyfikacja",
@@ -69,7 +60,9 @@ def scrape_olx(query, silent=False):
     found = 0
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&t={int(time.time())}"
-        r = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=12)
+        # OLX nie jest tak czuły, zostawiamy proste headery
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
+        r = requests.get(url, headers=headers, timeout=12)
         if r.status_code == 200:
             items = r.json().get('data', [])
             for o in items:
@@ -90,16 +83,19 @@ def scrape_olx(query, silent=False):
 def scrape_vinted(session, query, silent=False):
     found = 0
     try:
-        # Vinted wymaga czasami wejścia na główną, żeby ustawić ciastka
-        if random.random() > 0.8: session.get("https://www.vinted.pl/", timeout=10)
-        
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
-        r = session.get(url, timeout=12)
+        r = session.get(url, timeout=15)
         
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
-            if not cards: return 0 # Pusta strona, ale nie błąd
+            
+            # Weryfikacja czy strona nie jest blokadą Captchy
+            if "datadome" in r.text.lower() or "cloudflare" in r.text.lower():
+                return -1
+
+            if not cards: return 0 
+            
             for card in cards:
                 found += 1
                 txt = card.get_text(separator=" ").lower()
@@ -111,7 +107,7 @@ def scrape_vinted(session, query, silent=False):
                     process_item(link.get("title", ""), link['href'], price, "VINTED", silent)
             return found
         else:
-            return -1 # Sygnał blokady
+            return -1
     except:
         return -1
 
@@ -135,22 +131,38 @@ def get_new_session():
     s = requests.Session()
     px = random.choice(PROXY_LIST)
     s.proxies.update({"http": px, "https": px})
+    
+    # PEŁNE MASKOWANIE VINTED
     s.headers.update({
-        "User-Agent": random.choice(USER_AGENTS),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": "https://www.google.com/"
+        "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
     })
+    
+    # Próba zdobycia ciastka przed odpytywaniem
+    try:
+        s.get("https://www.vinted.pl/", timeout=10)
+    except:
+        pass
+        
     return s
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.29 - Vinted Recovery Mode")
+    log_debug("🚀 SNIPER v17.30 - Vinted Stealth Protocol")
     vs = get_new_session()
     QUERIES = ["psp konsola", "ps vita", "3ds", "gameboy", "pokemon bundle", "pokemon booster"]
     
-    # Cold Start
     for q in QUERIES:
         scrape_olx(q, silent=True)
-        scrape_vinted(vs, q, silent=True)
+        # Omijamy cold start dla Vinted, żeby od razu nie dostać bana
     
     while True:
         v_total = o_total = 0
@@ -158,25 +170,23 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         
         for q in QUERIES:
-            # OLX
             o_total += scrape_olx(q)
-            time.sleep(random.randint(5, 10))
+            time.sleep(random.randint(6, 12))
             
-            # VINTED
             if not v_blocked:
                 res = scrape_vinted(vs, q)
                 if res == -1: 
                     v_blocked = True
                 else: 
                     v_total += res
-                time.sleep(random.randint(15, 25)) # Dłuższe przerwy dla Vinted
+                time.sleep(random.randint(20, 35)) # Jeszcze dłuższa przerwa
         
         log_debug(f"Pętla OK: V({v_total}) O({o_total}). Baza: {len(SENT_HASHES)}")
         
         if v_blocked or v_total == 0:
-            log_debug("🔄 Vinted Blocked/Empty -> New Identity...")
+            log_debug("🔄 Vinted Blocked -> Zmiana IP i czyszczenie ciastek...")
             vs.close()
+            time.sleep(15)
             vs = get_new_session()
-            time.sleep(20) # Odpoczynek po blokadzie
         else:
-            time.sleep(random.randint(60, 100)) # Dłuższy czas między pętlami
+            time.sleep(random.randint(60, 120))
