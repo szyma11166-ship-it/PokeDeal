@@ -18,29 +18,42 @@ def log_debug(msg):
 
 def is_interesting_item(title, price):
     t_f = title.lower()
+    # Dodajemy spacje po bokach, żeby łatwo wyłapywać samodzielne słowa skrótowe (np. " de ")
+    t_f_padded = f" {t_f} "
     
     # 1. ABSOLUTNA CZARNA LISTA (Chińszczyzna i śmieci)
     absolute_trash = ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "podstawk", "stojak", "stand", "uchwyt"]
     if any(x in t_f for x in absolute_trash):
         return False, "ABSOLUTE_TRASH"
 
-    # 2. FILTR JĘZYKOWY (Działa na wszystko: Karty i Konsole)
-    # Wywalamy śmieciowe języki na starcie
-    bad_languages = ["jap", "japonskie", "japanese", "kor", "korean", "koreanskie", "fr", "it", "de", "niemieckie", "wloskie"]
-    if any(x in t_f for x in bad_languages):
+    # 2. FILTR JĘZYKOWY (Zabezpieczony przed ucinaniem słów w TCG)
+    bad_lang_words = [
+        "japońskie", "japonskie", "japanese", "koreańskie", "koreanskie", "korean", 
+        "niemieckie", "włoskie", "wloskie", "francuskie", "hiszpańskie", "hiszpanskie"
+    ]
+    bad_lang_exact = [
+        " de ", "[de]", "(de)", " de.", " -de- ",
+        " fr ", "[fr]", "(fr)", " fr.", " -fr- ",
+        " it ", "[it]", "(it)", " it.", " -it- ",
+        " jap ", "[jap]", "(jap)", " jap.",
+        " kor ", "[kor]", "(kor)", " kor."
+    ]
+    
+    if any(x in t_f for x in bad_lang_words) or any(x in t_f_padded for x in bad_lang_exact):
         return False, "BAD_LANGUAGE"
 
     # 3. DEFINICJA KATEGORII
     cat = None
     
     # --- POKEMON TCG LOGIC ---
-    if "pokemon" in t_f:
+    if "pokemon" in t_f or "pokémon" in t_f:
         if any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
-        elif "booster box" in t_f or "display" in t_f: cat = "TCG_DISPLAY" # Tylko całe boxy
-        elif "booster" in t_f: cat = "TCG_PACK" # Pojedyncze paczki
+        elif "booster box" in t_f or "display" in t_f: cat = "TCG_DISPLAY"
+        elif "booster" in t_f: cat = "TCG_PACK"
         elif "bundle" in t_f: cat = "TCG_BUNDLE"
         elif "tin" in t_f: cat = "TCG_TIN"
-        elif "partner illustration" in t_f: cat = "TCG_PAR"
+        elif "first partner" in t_f or "partner illustration" in t_f: cat = "TCG_PAR"
+        elif any(x in t_f for x in ["pokemon day", "30th", "anniversary", "aniversary"]): cat = "TCG_PDAY"
     
     # --- CONSOLE LOGIC ---
     if not cat:
@@ -55,7 +68,7 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CATEGORY"
 
-    # 4. FILTRY MIĘKKIE (Tylko dla konsol)
+    # 4. FILTRY MIĘKKIE (Dla konsol, żeby nie łapać samych gier)
     if "TCG_" not in cat:
         priority_keywords = ["konsola", "v2", "oled", "lite", "classic", "fat", "slim", "pch-", "3004", "2004", "1004"]
         trash_keywords = ["gra", "gry", "game", "joc", "zaidimai", "spiel", "jeu", "mario", "zelda", "fifa", "gta"]
@@ -63,19 +76,19 @@ def is_interesting_item(title, price):
         has_trash = any(x in t_f for x in trash_keywords)
         if has_trash and not has_priority: return False, "CONSOLE_GAME_SKIP"
 
-    # 5. NOWE LIMITY CENOWE (Poprawione TCG_DISPLAY i TCG_PACK)
+    # 5. NOWE LIMITY CENOWE 
     limits = {
         "GB": 300, "PSP": 250, "VITA": 650, "3DS": 450, "N3DS": 650, "2DS": 400, "DSI": 200, "DS": 150,
         "TCG_ETB": 250, 
-        "TCG_DISPLAY": 600, # Cały box
-        "TCG_PACK": 40,    # Pojedynczy booster
+        "TCG_DISPLAY": 600, 
+        "TCG_PACK": 40,    
         "TCG_BUNDLE": 150, 
         "TCG_TIN": 120, 
-        "TCG_PAR": 150
+        "TCG_PAR": 150,
+        "TCG_PDAY": 80
     }
     
-    # Dół zostawiamy bez zmian
-    if price < 80 and cat != "TCG_PACK": # Obniżka progu tylko dla paczek kart
+    if price < 80 and cat != "TCG_PACK": 
         return False, "TOO_CHEAP"
         
     if price > limits.get(cat, 999): 
@@ -140,14 +153,19 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
         return True
     else:
-        if price >= 100 and result != "CONSOLE_GAME_SKIP":
+        if price >= 100 and result not in ["CONSOLE_GAME_SKIP", "NO_CATEGORY"]:
             log_debug(f"🛑 SKIP ({result}): {title[:30]}... ({price:.2f} zł)")
     return False
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.44 | CONSOLES & TCG | HYDRA")
-    # Dodano zapytania o karty
-    QUERIES = ["psp konsola", "ps vita", "nintendo 3ds", "gameboy", "pokemon etb", "pokemon booster box", "pokemon bundle"]
+    log_debug("🚀 SNIPER v17.46 PRO | TCG 30TH & FIRST PARTNER")
+    
+    # Dodane precyzyjne frazy do kolejki wyszukiwania
+    QUERIES = [
+        "psp konsola", "ps vita", "nintendo 3ds", "gameboy", 
+        "pokemon etb", "pokemon booster box", "pokemon bundle",
+        "first partner illustration", "pokemon 30th", "pokemon day 2026"
+    ]
     
     while True:
         v_total = o_total = 0
