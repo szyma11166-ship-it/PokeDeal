@@ -1,100 +1,107 @@
 import requests
-from curl_cffi import requests as cffi_requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib
 
-# --- CONFIG ---
+# --- KONFIGURACJA KLUCZY ---
+WEBSCRAPING_KEYS = [
+    "7a2ddce7-a25e-4126-8f72-e67fd107e261", # Klucz 1
+    "b495cdb4-453c-4dc7-8bb0-2b8120c93394"  # Klucz 2
+]
+OLOSTEP_TOKEN = "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv"
+STAKEWATCH_URL = "https://agent.stakewatch.dev/api/scrape?url="
+
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
-IS_FIRST_RUN = True  
-
-# Dane HydraProxy (Podmień jak zmienisz dostawcę)
-RAW_PROXY = "isp2.hydraproxy.com:9989:szykvbdhxg404595:CmaoDg885jEO6Dxb_country-Poland"
-hp = RAW_PROXY.split(':')
-MY_PROXY = f"http://{hp[2]}:{hp[3]}@{hp[0]}:{hp[1]}"
+IS_FIRST_RUN = True
+CURRENT_KEY_INDEX = 0 
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_night_time():
-    """Zwraca True, jeśli jest między 01:00 a 06:00 rano (czasu serwera)."""
-    # Jeśli serwer ma czas o 2h do tyłu, 1:00-6:00 u niego to 3:00-8:00 u nas.
     godzina = int(time.strftime("%H"))
     return 1 <= godzina < 6
 
 def is_interesting_item(title, price):
     t_f = title.lower()
+    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "stojak", "case"]): return False, "TRASH"
     
-    # 1. ABSOLUTNA CZARNA LISTA
-    absolute_trash = ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "podstawk", "stojak", "stand"]
-    if any(x in t_f for x in absolute_trash): return False, "TRASH"
-
-    # 2. FILTR JĘZYKOWY (Szuka całych słów, żeby nie psuć 'order' lub 'elite')
-    bad_langs = [" jap ", " de ", " fr ", " it ", " kor ", "japonskie", "japanese", "niemieckie"]
-    if any(x in f" {t_f} " for x in bad_langs): return False, "BAD_LANG"
-
-    # 3. KATEGORIE
     cat = None
     if "pokemon" in t_f:
         if any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
-        elif any(x in t_f for x in ["display", "booster box"]): cat = "TCG_DISPLAY"
-        elif "bundle" in t_f: cat = "TCG_BUNDLE"
-        elif "tin" in t_f: cat = "TCG_TIN"
-    
+        elif any(x in t_f for x in ["display", "booster box", "bb"]): cat = "TCG_DISPLAY"
     if not cat:
-        if "ps vita" in t_f or "psvita" in t_f: cat = "VITA"
-        elif "psp" in t_f: cat = "PSP"
+        if any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
+        elif "psp" in t_f and "konsola" in t_f: cat = "PSP"
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
-        elif any(x in t_f for x in ["ds lite", "gameboy", "gba"]): cat = "RETRO"
+        elif any(x in t_f for x in ["gameboy", "gba", "dmg"]): cat = "RETRO"
 
     if not cat: return False, "NO_CAT"
-
-    # 4. LIMITY CENOWE (ETB podbite do 350 zł)
-    limits = {
-        "PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, "RETRO": 400,
-        "TCG_ETB": 350, "TCG_DISPLAY": 650, "TCG_BUNDLE": 200, "TCG_TIN": 130
-    }
     
-    if price < 70: return False, "TOO_CHEAP"
-    if price > limits.get(cat, 999): return False, "OVER_PRICED"
+    limits = {"PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, "RETRO": 400, "TCG_ETB": 350, "TCG_DISPLAY": 700}
+    if 70 < price <= limits.get(cat, 999): return True, cat
+    return False, "PRICE"
 
-    return True, cat
+def get_vinted_html(target_url):
+    global CURRENT_KEY_INDEX
+    
+    # KROK 1: WebScraping.ai (Twoje główne paliwo)
+    if CURRENT_KEY_INDEX < len(WEBSCRAPING_KEYS):
+        key = WEBSCRAPING_KEYS[CURRENT_KEY_INDEX]
+        try:
+            api_url = f"https://api.webscraping.ai/html?api_key={key}&url={target_url}"
+            r = requests.get(api_url, timeout=20)
+            if r.status_code == 200: return r.text
+            elif r.status_code in [402, 429]:
+                log_debug(f"⚠️ WebScraping Key {CURRENT_KEY_INDEX+1} wyczerpany.")
+                CURRENT_KEY_INDEX += 1
+                return get_vinted_html(target_url)
+        except:
+            CURRENT_KEY_INDEX += 1
+            return get_vinted_html(target_url)
 
-def get_session():
-    return cffi_requests.Session(impersonate="chrome124", proxies={"http": MY_PROXY, "https": MY_PROXY})
+    # KROK 2: OloStep API
+    if OLOSTEP_TOKEN:
+        try:
+            log_debug("🔄 Próba przez OloStep...")
+            h = {"Authorization": f"Bearer {OLOSTEP_TOKEN}", "Content-Type": "application/json"}
+            r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=25)
+            if r.status_code == 200:
+                return r.json().get('default_snapshot', {}).get('content', '')
+        except: pass
 
-def scrape_olx(session, query):
+    # KROK 3: Stakewatch API (Nowość)
     try:
+        log_debug("🔄 Próba przez Stakewatch...")
+        r = requests.get(f"{STAKEWATCH_URL}{target_url}", timeout=25)
+        if r.status_code == 200: return r.text
+    except: pass
+
+    log_debug("❌ Wszystkie API zawiodły w tym cyklu.")
+    return None
+
+def scrape_olx(query):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"}
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&limit=15"
-        r = session.get(url, timeout=10)
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             for o in r.json().get('data', []):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key']=='price'), None)
                 if p_val: process_item(o['title'], o['url'], float(p_val), "OLX")
-        else:
-            log_debug(f"⚠️ OLX Błąd: {r.status_code}")
-    except Exception as e:
-        log_debug(f"❌ OLX Wyjątek: {str(e)[:50]}")
+    except: pass
 
-def scrape_vinted(session, query):
+def scrape_vinted(query):
+    v_url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
+    html = get_vinted_html(v_url)
+    if not html: return
+
     try:
-        url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
-        r = session.get(url, timeout=15)
-        
-        if r.status_code != 200:
-            log_debug(f"⚠️ Vinted Error {r.status_code} dla: {query}")
-            return
-
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
         cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
-        
-        if not cards:
-            log_debug(f"❓ Vinted: Brak ofert dla '{query}' (Możliwa blokada?)")
-            return
-
-        for card in cards[:12]:
+        for card in cards[:10]:
             txt = card.get_text(separator=" ").lower()
             if any(x in txt for x in ["dni", "vakar", "days"]): continue
             link = card.find("a", href=True)
@@ -102,14 +109,12 @@ def scrape_vinted(session, query):
             if link and p_match:
                 price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                 process_item(link.get("title", "") or "Item", link['href'], price, "VINTED")
-    except Exception as e:
-        log_debug(f"❌ Vinted Wyjątek: {str(e)[:50]}")
+    except: pass
 
 def process_item(title, url, price, src):
     global IS_FIRST_RUN
     clean_url = url.split("?")[0].rstrip("/")
     h = hashlib.md5(f"{title[:30]}_{int(price)}".encode()).hexdigest()
-    
     if h in SENT_HASHES or clean_url in SENT_HASHES: return
     
     valid, res = is_interesting_item(title, price)
@@ -117,35 +122,28 @@ def process_item(title, url, price, src):
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-            log_debug(f"🎯 WYSŁANO: {title[:20]} ({price} zł)")
+            log_debug(f"🎯 WYSŁANO: {title[:15]} ({price} zł)")
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
-    elif price >= 100:
-        if not IS_FIRST_RUN:
-            # Opcjonalne: odkomentuj poniżej, jeśli chcesz widzieć CO bot odrzuca
-            # log_debug(f"🛑 SKIP ({res}): {title[:25]}... ({price} zł)")
-            pass
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER ECO v17.47 | FULL DIAGNOSTICS")
-    QUERIES = ["psp konsola", "ps vita", "nintendo 3ds", "gameboy", "pokemon etb", "pokemon booster"]
+    log_debug("🚀 SNIPER v17.80 | MULTI-SHIELD MODE")
+    QUERIES = ["psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy", "pokemon etb", "pokemon booster box"]
     
     while True:
         if is_night_time():
-            log_debug("🌙 Tryb nocny (01-06). Śpię 40 minut...")
-            time.sleep(2400)
-            continue
+            log_debug("🌙 Noc. Śpię..."); time.sleep(2400); continue
 
-        with get_session() as s:
-            random.shuffle(QUERIES)
-            for q in QUERIES:
-                scrape_olx(s, q)
-                time.sleep(random.randint(10, 20))
-                scrape_vinted(s, q)
-                time.sleep(random.randint(15, 30))
+        CURRENT_KEY_INDEX = 0 # Reset kluczy na start każdego cyklu
+        random.shuffle(QUERIES)
+        for q in QUERIES:
+            scrape_olx(q)
+            time.sleep(random.randint(10, 20))
+            scrape_vinted(q)
+            time.sleep(random.randint(15, 30))
         
         if IS_FIRST_RUN:
-            log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)} ofert).")
+            log_debug("✅ Baza gotowa. Czekam na okazje...")
             IS_FIRST_RUN = False
         
-        log_debug(f"🔄 Cykl zakończony. Pamięć: {len(SENT_HASHES)} pozycji. Śpię...")
-        time.sleep(random.randint(600, 850))
+        log_debug(f"🔄 Cykl zakończony (Baza: {len(SENT_HASHES)}). Śpię 15 min...")
+        time.sleep(random.randint(900, 1100))
