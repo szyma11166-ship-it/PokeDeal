@@ -1,17 +1,21 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib
+import re, time, random, hashlib, os
 
 # --- KONFIGURACJA KLUCZY ---
+# Wpisz swoje klucze tutaj:
 WEBSCRAPING_KEYS = [
-    "7a2ddce7-a25e-4126-8f72-e67fd107e261", # Klucz 1
-    "b495cdb4-453c-4dc7-8bb0-2b8120c93394"  # Klucz 2
+    "7a2ddce7-a25e-4126-8f72-e67fd107e261", 
+    "b495cdb4-453c-4dc7-8bb0-2b8120c93394"
 ]
 OLOSTEP_TOKEN = "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv"
 STAKEWATCH_URL = "https://agent.stakewatch.dev/api/scrape?url="
 
+# TELEGRAM
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
+
+# ZMIENNE GLOBALNE
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 CURRENT_KEY_INDEX = 0 
@@ -20,17 +24,21 @@ def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_night_time():
+    # Railway zazwyczaj działa w czasie UTC, sprawdź godzinę w logach!
     godzina = int(time.strftime("%H"))
     return 1 <= godzina < 6
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "stojak", "case"]): return False, "TRASH"
+    # Filtry antysmieciowe
+    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "stojak", "case", "uchwyt"]): 
+        return False, "TRASH"
     
     cat = None
     if "pokemon" in t_f:
         if any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
         elif any(x in t_f for x in ["display", "booster box", "bb"]): cat = "TCG_DISPLAY"
+    
     if not cat:
         if any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
         elif "psp" in t_f and "konsola" in t_f: cat = "PSP"
@@ -40,14 +48,16 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CAT"
     
+    # Ceny maksymalne dla okazji
     limits = {"PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, "RETRO": 400, "TCG_ETB": 350, "TCG_DISPLAY": 700}
-    if 70 < price <= limits.get(cat, 999): return True, cat
+    if 70 < price <= limits.get(cat, 999): 
+        return True, cat
     return False, "PRICE"
 
 def get_vinted_html(target_url):
     global CURRENT_KEY_INDEX
     
-    # KROK 1: WebScraping.ai (Twoje główne paliwo)
+    # SHIELD 1: WebScraping.ai
     if CURRENT_KEY_INDEX < len(WEBSCRAPING_KEYS):
         key = WEBSCRAPING_KEYS[CURRENT_KEY_INDEX]
         try:
@@ -55,31 +65,31 @@ def get_vinted_html(target_url):
             r = requests.get(api_url, timeout=20)
             if r.status_code == 200: return r.text
             elif r.status_code in [402, 429]:
-                log_debug(f"⚠️ WebScraping Key {CURRENT_KEY_INDEX+1} wyczerpany.")
+                log_debug(f"⚠️ WebScraping Key {CURRENT_KEY_INDEX+1} OFF. Przełączam...")
                 CURRENT_KEY_INDEX += 1
                 return get_vinted_html(target_url)
         except:
             CURRENT_KEY_INDEX += 1
             return get_vinted_html(target_url)
 
-    # KROK 2: OloStep API
+    # SHIELD 2: OloStep
     if OLOSTEP_TOKEN:
         try:
-            log_debug("🔄 Próba przez OloStep...")
+            log_debug("🔄 Shield 2: OloStep...")
             h = {"Authorization": f"Bearer {OLOSTEP_TOKEN}", "Content-Type": "application/json"}
             r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=25)
             if r.status_code == 200:
                 return r.json().get('default_snapshot', {}).get('content', '')
         except: pass
 
-    # KROK 3: Stakewatch API (Nowość)
+    # SHIELD 3: Stakewatch
     try:
-        log_debug("🔄 Próba przez Stakewatch...")
+        log_debug("🔄 Shield 3: Stakewatch...")
         r = requests.get(f"{STAKEWATCH_URL}{target_url}", timeout=25)
         if r.status_code == 200: return r.text
     except: pass
 
-    log_debug("❌ Wszystkie API zawiodły w tym cyklu.")
+    log_debug("❌ Wszystkie SHIELDS zawiodły.")
     return None
 
 def scrape_olx(query):
@@ -126,24 +136,32 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.80 | MULTI-SHIELD MODE")
-    QUERIES = ["psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy", "pokemon etb", "pokemon booster box"]
+    log_debug("🚀 SNIPER v17.90 | RAILWAY CLOUD MODE")
+    QUERIES = ["psp konsola", "ps vita", "nintendo 3ds", "gameboy", "pokemon etb", "pokemon booster box"]
     
-    while True:
-        if is_night_time():
-            log_debug("🌙 Noc. Śpię..."); time.sleep(2400); continue
+    last_reset_day = time.strftime("%d")
 
-        CURRENT_KEY_INDEX = 0 # Reset kluczy na start każdego cyklu
+    while True:
+        # Auto-reset o północy
+        current_day = time.strftime("%d")
+        if current_day != last_reset_day:
+            log_debug("🌅 Nowy dzień w chmurze! Reset kluczy...")
+            CURRENT_KEY_INDEX = 0
+            last_reset_day = current_day
+
+        if is_night_time():
+            log_debug("🌙 Nocna przerwa (01:00-06:00)..."); time.sleep(1800); continue
+
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
-            time.sleep(random.randint(10, 20))
+            time.sleep(random.randint(15, 25))
             scrape_vinted(q)
-            time.sleep(random.randint(15, 30))
+            time.sleep(random.randint(20, 35))
         
         if IS_FIRST_RUN:
-            log_debug("✅ Baza gotowa. Czekam na okazje...")
+            log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)} ofert). Snajper czuwa...")
             IS_FIRST_RUN = False
         
-        log_debug(f"🔄 Cykl zakończony (Baza: {len(SENT_HASHES)}). Śpię 15 min...")
+        log_debug(f"🔄 Cykl OK. Sleep 15min...")
         time.sleep(random.randint(900, 1100))
