@@ -1,8 +1,17 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os
+import re, time, random, hashlib, os, json
 
-# --- ARSENAŁ KLUCZY (5x500 = 2500 req) ---
+# Wymuszenie polskiej strefy czasowej (działa na serwerach Linux/Railway)
+os.environ['TZ'] = 'Europe/Warsaw'
+if hasattr(time, 'tzset'):
+    time.tzset()
+
+# --- ARSENAŁ KLUCZY (PRO SHIELDS) ---
+SCRAPINGDOG_KEY = "69cc2236cca5a0331e084197"
+SCRAPINGANT_KEY = "5587f74b5a154af9a235f145e72cfdec"
+SCRAPENINJA_KEY = "YOUR-APIROAD-KEY" # <-- Podmień, jeśli wygenerowałeś klucz
+
 OLOSTEP_KEYS = [
     "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv",
     "olostep_J3hXd9tU8hcP8qTHqqmFhzzrsaoG0V4neNy7",
@@ -21,20 +30,27 @@ STAKEWATCH_URL = "https://agent.stakewatch.dev/api/scrape?url="
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
-# SYSTEM
+# SYSTEM ZARZĄDZANIA PALIWEM
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 OLO_INDEX = 0
+DOG_ALIVE = True
+ANT_ALIVE = True
+NINJA_ALIVE = True
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_night_time():
-    h_utc = int(time.strftime("%H"))
-    return h_utc >= 22 or h_utc < 4
+    # Teraz bot posługuje się dokładnie polskim czasem!
+    # Od 23:00 (włącznie) do 05:59 rano.
+    godzina_pl = int(time.strftime("%H"))
+    return godzina_pl >= 23 or godzina_pl < 6
 
 def is_interesting_item(title, price):
     t_f = title.lower()
+    
+    # Czarna lista (Nienaruszona)
     if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części"]): 
         return False, "TRASH"
     
@@ -54,16 +70,16 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CAT"
     
-    # --- ZAKTUALIZOWANE CENY ---
+    # Twoje ceny docelowe
     limits = {
         "PSP": 280, 
         "VITA": 650, 
         "3DS": 500, 
         "2DS": 450, 
-        "RETRO": 300, # Zmieniono z 400 na 300
+        "RETRO": 300, 
         "TCG_ETB": 350, 
         "TCG_BB": 700, 
-        "TCG_BUNDLE": 150, # Zmieniono z 140 na 150
+        "TCG_BUNDLE": 150, 
         "FIRST_PARTNER": 120
     }
     
@@ -72,10 +88,49 @@ def is_interesting_item(title, price):
     return False, "PRICE"
 
 def get_vinted_html(target_url):
-    global OLO_INDEX
+    global OLO_INDEX, DOG_ALIVE, ANT_ALIVE, NINJA_ALIVE
+    
+    # TARCZA 1: ScrapingDog
+    if DOG_ALIVE:
+        try:
+            log_debug("🔄 Shield: ScrapingDog...")
+            r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
+            if r.status_code == 200: return r.text
+            elif r.status_code in [401, 403, 429]: 
+                log_debug("⚠️ ScrapingDog OFF. Skok...")
+                DOG_ALIVE = False
+        except: DOG_ALIVE = False
+
+    # TARCZA 2: ScrapingAnt
+    if ANT_ALIVE:
+        try:
+            log_debug("🔄 Shield: ScrapingAnt...")
+            r = requests.get("https://api.scrapingant.com/v2/general", params={"url": target_url, "x-api-key": SCRAPINGANT_KEY, "proxy_country": "PL"}, timeout=20)
+            if r.status_code == 200: return r.text
+            elif r.status_code in [401, 403, 429]:
+                log_debug("⚠️ ScrapingAnt OFF. Skok...")
+                ANT_ALIVE = False
+        except: ANT_ALIVE = False
+
+    # TARCZA 3: ScrapeNinja
+    if NINJA_ALIVE and SCRAPENINJA_KEY != "YOUR-APIROAD-KEY":
+        try:
+            log_debug("🔄 Shield: ScrapeNinja...")
+            h = {"Content-Type": "application/json", "x-apiroad-key": SCRAPENINJA_KEY}
+            p = {"url": target_url, "method": "GET", "geo": "de"}
+            r = requests.post("https://scrapeninja.apiroad.net/scrape", json=p, headers=h, timeout=20)
+            if r.status_code == 200:
+                return r.json().get('body', '')
+            elif r.status_code in [401, 402, 403, 429]:
+                log_debug("⚠️ ScrapeNinja OFF. Skok...")
+                NINJA_ALIVE = False
+        except: NINJA_ALIVE = False
+
+    # TARCZA 4: OloStep
     while OLO_INDEX < len(OLOSTEP_KEYS):
         token = OLOSTEP_KEYS[OLO_INDEX]
         try:
+            log_debug(f"🔄 Shield: OloStep Key {OLO_INDEX+1}...")
             h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             r = requests.post("https://api.olostep.com/v1/scrapes", 
                               json={"url_to_scrape": target_url}, headers=h, timeout=25)
@@ -88,10 +143,13 @@ def get_vinted_html(target_url):
                 OLO_INDEX += 1
         except: OLO_INDEX += 1
 
+    # TARCZA 5: Stakewatch
     try:
+        log_debug("🔄 Shield: Stakewatch Backup...")
         r = requests.get(f"{STAKEWATCH_URL}{target_url}", timeout=25)
         if r.status_code == 200: return r.text
     except: pass
+    
     return None
 
 def scrape_olx(query):
@@ -137,7 +195,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v18.60 | FINAL SYNC")
+    log_debug("🚀 SNIPER v19.10 | PRO SHIELD EDITION (Nocne Usypianie)")
     QUERIES = [
         "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", 
         "gameboy advance", "gameboy color", "pokemon etb", 
@@ -147,12 +205,19 @@ if __name__ == "__main__":
     last_reset_day = time.strftime("%d")
 
     while True:
+        # Reset tarcz codziennie
         if time.strftime("%d") != last_reset_day:
             OLO_INDEX = 0
+            DOG_ALIVE = True
+            ANT_ALIVE = True
+            NINJA_ALIVE = True
             last_reset_day = time.strftime("%d")
 
+        # Nowe usypianie na polski czas
         if is_night_time():
-            log_debug("🌙 Nocna pauza..."); time.sleep(1800); continue
+            log_debug("🌙 Nocna pauza w Polsce (23:00 - 06:00). Śpię 30 min...")
+            time.sleep(1800)
+            continue
 
         random.shuffle(QUERIES)
         for q in QUERIES:
