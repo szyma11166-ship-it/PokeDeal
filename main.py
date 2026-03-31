@@ -76,15 +76,18 @@ def get_vinted_html(target_url):
         key = WEBSCRAPING_KEYS[WS_INDEX]
         try:
             api_url = f"https://api.webscraping.ai/html?api_key={key}&url={target_url}"
-            r = requests.get(api_url, timeout=20)
-            if r.status_code == 200: return r.text
-            elif r.status_code in [402, 429]:
-                log_debug(f"⚠️ WebScraping {WS_INDEX+1} pusty. Skok...")
-                WS_INDEX += 1
-            else: break
-        except: WS_INDEX += 1
+            r = requests.get(api_url, timeout=30) # Zwiększony timeout
+            if r.status_code == 200: 
+                return r.text
+            else:
+                log_debug(f"⚠️ WebScraping Kod: {r.status_code} (Klucz {WS_INDEX+1})")
+                WS_INDEX += 1 # Jeśli nie 200, to idź do następnego
+        except Exception as e:
+            log_debug(f"❌ WebScraping Błąd Sieci: {str(e)[:50]}")
+            WS_INDEX += 1
 
-    # --- POZIOM 2: OloStep (Nowe klucze!) ---
+    # --- POZIOM 2: OloStep ---
+
     while OLO_INDEX < len(OLOSTEP_KEYS):
         token = OLOSTEP_KEYS[OLO_INDEX]
         try:
