@@ -18,94 +18,51 @@ def log_debug(msg):
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    # Dodajemy spacje po bokach, żeby łatwo wyłapywać samodzielne słowa skrótowe (np. " de ")
-    t_f_padded = f" {t_f} "
     
-    # 1. ABSOLUTNA CZARNA LISTA (Chińszczyzna i śmieci)
-    absolute_trash = ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "podstawk", "stojak", "stand", "uchwyt"]
-    if any(x in t_f for x in absolute_trash):
-        return False, "ABSOLUTE_TRASH"
+    # 1. ABSOLUTNA CZARNA LISTA
+    absolute_trash = ["r36s", "miyoo", "anbernic", "powkiddy", "sf2000", "emulator", "podstawk", "stojak", "stand"]
+    if any(x in t_f for x in absolute_trash): return False, "TRASH"
 
-    # 2. FILTR JĘZYKOWY (Zabezpieczony przed ucinaniem słów w TCG)
-    bad_lang_words = [
-        "japońskie", "japonskie", "japanese", "koreańskie", "koreanskie", "korean", 
-        "niemieckie", "włoskie", "wloskie", "francuskie", "hiszpańskie", "hiszpanskie"
-    ]
-    bad_lang_exact = [
-        " de ", "[de]", "(de)", " de.", " -de- ",
-        " fr ", "[fr]", "(fr)", " fr.", " -fr- ",
-        " it ", "[it]", "(it)", " it.", " -it- ",
-        " jap ", "[jap]", "(jap)", " jap.",
-        " kor ", "[kor]", "(kor)", " kor."
-    ]
-    
-    if any(x in t_f for x in bad_lang_words) or any(x in t_f_padded for x in bad_lang_exact):
-        return False, "BAD_LANGUAGE"
+    # 2. FILTR JĘZYKOWY (Poprawiony - szuka całych słów)
+    bad_langs = [" jap ", " de ", " fr ", " it ", " kor ", "japonskie", "japanese", "niemieckie"]
+    if any(x in f" {t_f} " for x in bad_langs): return False, "BAD_LANG"
 
-    # 3. DEFINICJA KATEGORII
+    # 3. KATEGORIE
     cat = None
-    
-    # --- POKEMON TCG LOGIC ---
-    if "pokemon" in t_f or "pokémon" in t_f:
+    if "pokemon" in t_f:
         if any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
         elif "booster box" in t_f or "display" in t_f: cat = "TCG_DISPLAY"
-        elif "booster" in t_f: cat = "TCG_PACK"
         elif "bundle" in t_f: cat = "TCG_BUNDLE"
         elif "tin" in t_f: cat = "TCG_TIN"
-        elif "first partner" in t_f or "partner illustration" in t_f: cat = "TCG_PAR"
-        elif any(x in t_f for x in ["pokemon day", "30th", "anniversary", "aniversary"]): cat = "TCG_PDAY"
     
-    # --- CONSOLE LOGIC ---
     if not cat:
         if "ps vita" in t_f or "psvita" in t_f: cat = "VITA"
         elif "psp" in t_f: cat = "PSP"
-        elif "new 3ds" in t_f: cat = "N3DS"
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
-        elif "dsi" in t_f: cat = "DSI"
-        elif any(x in t_f for x in ["ds lite", "ds fat"]): cat = "DS"
-        elif any(x in t_f for x in ["gameboy", "gba", "gbc", "advance"]): cat = "GB"
+        elif any(x in t_f for x in ["ds lite", "gameboy", "gba"]): cat = "RETRO"
 
-    if not cat: return False, "NO_CATEGORY"
+    if not cat: return False, "NO_CAT"
 
-    # 4. FILTRY MIĘKKIE (Dla konsol, żeby nie łapać samych gier)
-    if "TCG_" not in cat:
-        priority_keywords = ["konsola", "v2", "oled", "lite", "classic", "fat", "slim", "pch-", "3004", "2004", "1004"]
-        trash_keywords = ["gra", "gry", "game", "joc", "zaidimai", "spiel", "jeu", "mario", "zelda", "fifa", "gta"]
-        has_priority = any(x in t_f for x in priority_keywords)
-        has_trash = any(x in t_f for x in trash_keywords)
-        if has_trash and not has_priority: return False, "CONSOLE_GAME_SKIP"
-
-    # 5. NOWE LIMITY CENOWE 
+    # 4. LIMITY CENOWE (Dopasowane, żeby nie skipować okazji)
     limits = {
-        "GB": 300, "PSP": 250, "VITA": 650, "3DS": 450, "N3DS": 650, "2DS": 400, "DSI": 200, "DS": 150,
-        "TCG_ETB": 250, 
-        "TCG_DISPLAY": 600, 
-        "TCG_PACK": 40,    
-        "TCG_BUNDLE": 150, 
-        "TCG_TIN": 120, 
-        "TCG_PAR": 150,
-        "TCG_PDAY": 80
+        "PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, "RETRO": 400,
+        "TCG_ETB": 350, "TCG_DISPLAY": 650, "TCG_BUNDLE": 200, "TCG_TIN": 130
     }
     
-    if price < 80 and cat != "TCG_PACK": 
-        return False, "TOO_CHEAP"
-        
-    if price > limits.get(cat, 999): 
-        return False, "OVER_PRICED"
+    if price < 70: return False, "TOO_CHEAP"
+    if price > limits.get(cat, 999): return False, "OVER_PRICE"
 
     return True, cat
 
 def get_session():
-    s = cffi_requests.Session(impersonate="chrome124", proxies={"http": MY_PROXY, "https": MY_PROXY})
-    s.headers.update({"Accept-Language": "pl-PL,pl;q=0.9", "Referer": "https://www.google.pl/"})
-    return s
+    return cffi_requests.Session(impersonate="chrome124", proxies={"http": MY_PROXY, "https": MY_PROXY})
 
 def scrape_olx(session, query):
     found = 0
     try:
-        url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc"
-        r = session.get(url, timeout=12)
+        url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&limit=20"
+        r = session.get(url, timeout=10)
         if r.status_code == 200:
             for o in r.json().get('data', []):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key']=='price'), None)
@@ -116,20 +73,20 @@ def scrape_olx(session, query):
 def scrape_vinted(session, query):
     found = 0
     try:
-        session.get("https://www.vinted.pl/", timeout=10)
+        # Usunięcie zbędnego requestu do strony głównej (oszczędność transferu!)
         url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
         r = session.get(url, timeout=15)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
-            for card in cards:
+            for card in cards[:15]: # Sprawdzamy tylko 15 najnowszych (oszczędność czasu)
                 txt = card.get_text(separator=" ").lower()
                 if any(x in txt for x in ["dni", "vakar", "days"]): continue
                 link = card.find("a", href=True)
                 p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
                 if link and p_match:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                    if process_item(link.get("title", "") or "Przedmiot", link['href'], price, "VINTED"): found += 1
+                    if process_item(link.get("title", "") or "Item", link['href'], price, "VINTED"): found += 1
             return found
         return -1
     except: return -1
@@ -137,50 +94,35 @@ def scrape_vinted(session, query):
 def process_item(title, url, price, src):
     global IS_FIRST_RUN
     clean_url = url.split("?")[0].rstrip("/")
-    h = hashlib.md5(f"{title[:40]}_{int(price)}".encode()).hexdigest()
+    h = hashlib.md5(f"{title[:30]}_{int(price)}".encode()).hexdigest()
     if h in SENT_HASHES or clean_url in SENT_HASHES: return False
     
-    valid, result = is_interesting_item(title, price)
-    
+    valid, res = is_interesting_item(title, price)
     if valid:
         if IS_FIRST_RUN:
-            SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
-            return False
-            
-        msg = f"🔥 *OKAZJA {src}* [{result}]\n📦 {title[:75]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
+            SENT_HASHES.add(h); return False
+        msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-        log_debug(f"🎯 WYSŁANO: {title[:20]}... ({price:.2f} zł) [{result}]")
-        SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
-        return True
-    else:
-        if price >= 100 and result not in ["CONSOLE_GAME_SKIP", "NO_CATEGORY"]:
-            log_debug(f"🛑 SKIP ({result}): {title[:30]}... ({price:.2f} zł)")
+        log_debug(f"🎯 WYSŁANO: {title[:20]} ({price} zł)")
+        SENT_HASHES.add(h); return True
     return False
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v17.46 PRO | TCG 30TH & FIRST PARTNER")
-    
-    # Dodane precyzyjne frazy do kolejki wyszukiwania
-    QUERIES = [
-        "psp konsola", "ps vita", "nintendo 3ds", "gameboy", 
-        "pokemon etb", "pokemon booster box", "pokemon bundle",
-        "first partner illustration", "pokemon 30th", "pokemon day 2026"
-    ]
+    log_debug("🚀 SNIPER ECO-MODE | Zredukowane zapytania | Oszczędność Proxy")
+    # Zredukowana liczba zapytań = mniej zużytego transferu
+    QUERIES = ["psp konsola", "ps vita", "nintendo 3ds", "gameboy", "pokemon etb"]
     
     while True:
-        v_total = o_total = 0
         with get_session() as s:
-            random.shuffle(QUERIES)
             for q in QUERIES:
-                o_total += scrape_olx(s, q)
-                time.sleep(random.randint(5, 10))
-                res = scrape_vinted(s, q)
-                if res != -1: v_total += res
-                time.sleep(random.randint(15, 25))
+                scrape_olx(s, q)
+                time.sleep(random.randint(10, 20))
+                scrape_vinted(s, q)
+                time.sleep(random.randint(20, 40))
         
         if IS_FIRST_RUN:
-            log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)} ofert). Szukam okazji...")
+            log_debug("✅ Baza zainicjowana. Przechodzę w tryb ECO (czekam 8-12 min)...")
             IS_FIRST_RUN = False
-        else:
-            log_debug(f"Pętla OK. Nowe: V({v_total}) O({o_total})")
-        time.sleep(random.randint(60, 120))
+        
+        # DŁUGA PRZERWA - Twoje proxy Ci podziękuje
+        time.sleep(random.randint(500, 750)) 
