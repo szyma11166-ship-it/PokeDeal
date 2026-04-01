@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os, json
+import re, time, random, hashlib, os
 
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
@@ -33,7 +33,6 @@ IS_FIRST_RUN = True
 OLO_INDEX = 0
 DOG_ALIVE = True
 ANT_ALIVE = True
-NINJA_ALIVE = True
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -42,10 +41,19 @@ def is_night_time():
     godzina_pl = int(time.strftime("%H"))
     return godzina_pl >= 23 or godzina_pl < 6
 
+# Funkcja wykrywająca pułapki anty-botowe
+def is_blocked_html(html):
+    if not html: return True
+    html_lower = html.lower()
+    if any(x in html_lower for x in ["datadome", "captcha", "cloudflare", "verify you are human", "potwierdź, że jesteś"]):
+        return True
+    return False
+
 def is_interesting_item(title, price):
     t_f = title.lower()
     
-    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części"]): 
+    # Dodano wycinanie samych GIER, żeby nie spamiło Telegrama
+    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "gra", "gry", "game ", "games "]): 
         return False, "TRASH"
     
     cat = None
@@ -71,27 +79,31 @@ def is_interesting_item(title, price):
         "TCG_ETB": 350, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 120
     }
     
-    if 65 < price <= limits.get(cat, 999): 
+    if 49 < price <= limits.get(cat, 999): 
         return True, cat
     return False, "PRICE"
 
 def get_vinted_html(target_url):
-    global OLO_INDEX, DOG_ALIVE, ANT_ALIVE, NINJA_ALIVE
+    global OLO_INDEX, DOG_ALIVE, ANT_ALIVE
     
     if DOG_ALIVE:
         try:
-            # Wymuszenie JS (dynamic: true)
             r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=25)
-            if r.status_code == 200: return r.text
-            elif r.status_code in [401, 403, 429]: DOG_ALIVE = False
+            if r.status_code == 200 and not is_blocked_html(r.text): 
+                return r.text
+            else:
+                log_debug("⚠️ ScrapingDog zablokowany przez Datadome. Wyłączam na dziś.")
+                DOG_ALIVE = False
         except: DOG_ALIVE = False
 
     if ANT_ALIVE:
         try:
-            # Użycie mocniejszego proxy w API Ant
             r = requests.get("https://api.scrapingant.com/v2/extended", params={"url": target_url, "x-api-key": SCRAPINGANT_KEY, "proxy_country": "PL"}, timeout=25)
-            if r.status_code == 200: return r.text
-            elif r.status_code in [401, 403, 429]: ANT_ALIVE = False
+            if r.status_code == 200 and not is_blocked_html(r.text):
+                return r.text
+            else:
+                log_debug("⚠️ ScrapingAnt zablokowany przez Datadome. Wyłączam na dziś.")
+                ANT_ALIVE = False
         except: ANT_ALIVE = False
 
     while OLO_INDEX < len(OLOSTEP_KEYS):
@@ -99,15 +111,22 @@ def get_vinted_html(target_url):
         try:
             h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=25)
-            if r.status_code == 200: return r.json().get('default_snapshot', {}).get('content', '')
-            elif r.status_code in [401, 402, 429]: OLO_INDEX += 1
+            if r.status_code == 200:
+                html = r.json().get('default_snapshot', {}).get('content', '')
+                if not is_blocked_html(html):
+                    return html
+                else:
+                    log_debug(f"⚠️ OloStep {OLO_INDEX+1} zablokowany. Skok na następny klucz...")
+                    OLO_INDEX += 1
             else: OLO_INDEX += 1
         except: OLO_INDEX += 1
 
     try:
         r = requests.get(f"{STAKEWATCH_URL}{target_url}", timeout=25)
-        if r.status_code == 200: return r.text
+        if r.status_code == 200 and not is_blocked_html(r.text): 
+            return r.text
     except: pass
+    
     return None
 
 def scrape_olx(query):
@@ -125,13 +144,13 @@ def scrape_vinted(query):
     v_url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
     html = get_vinted_html(v_url)
     if not html:
-        log_debug(f"❌ Vinted PUSTY KOD dla: {query}")
+        log_debug(f"❌ WSZYSTKIE TARCZE ZABLOKOWANE DLA: {query}")
         return
     try:
         soup = BeautifulSoup(html, "html.parser")
         cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
         if not cards:
-            log_debug(f"⚠️ Vinted załadowany, ale 0 ofert dla: {query} (Blokada Datadome?)")
+            log_debug(f"⚠️ Vinted przeszło, ale brak wyników dla: {query}")
         
         for card in cards[:12]:
             txt = card.get_text(separator=" ").lower()
@@ -159,7 +178,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v19.30 | VINTED RADAR ENABLED")
+    log_debug("🚀 SNIPER v19.40 | DATADOME BYPASS & ANTI-SPAM")
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", 
         "gameboy advance", "gameboy color", "pokemon etb", 
