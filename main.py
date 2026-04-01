@@ -2,7 +2,6 @@ import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os, json
 
-# Wymuszenie polskiej strefy czasowej
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
@@ -26,11 +25,9 @@ OLOSTEP_KEYS = [
 ]
 STAKEWATCH_URL = "https://agent.stakewatch.dev/api/scrape?url="
 
-# TELEGRAM
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
-# SYSTEM
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 OLO_INDEX = 0
@@ -52,39 +49,29 @@ def is_interesting_item(title, price):
         return False, "TRASH"
     
     cat = None
-    # POKEMON
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f: cat = "FIRST_PARTNER"
         elif any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
         elif any(x in t_f for x in ["display", "booster box", "bb", "boosterbox"]): cat = "TCG_BB"
         elif any(x in t_f for x in ["bundle", "booster bundle"]): cat = "TCG_BUNDLE"
     
-    # KONSOLE
     if not cat:
         if any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
         elif "psp" in t_f and any(x in t_f for x in ["1004", "2004", "3004", "go", "street", "e1004", "konsola"]): cat = "PSP"
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
-        # PRZYWRÓCONE: DS i DSi
         elif any(x in t_f for x in ["nintendo ds", " dsi ", " ds lite ", " dsi xl "]): cat = "DS_OLD"
         elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
 
     if not cat: return False, "NO_CAT"
     
     limits = {
-        "PSP": 280, 
-        "VITA": 650, 
-        "3DS": 500, 
-        "2DS": 450, 
-        "DS_OLD": 150, # Limit dla DS/DSi
-        "RETRO": 300, 
-        "TCG_ETB": 350, 
-        "TCG_BB": 700, 
-        "TCG_BUNDLE": 150, 
-        "FIRST_PARTNER": 120
+        "PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, 
+        "DS_OLD": 150, "RETRO": 300, 
+        "TCG_ETB": 350, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 120
     }
     
-    if 49 < price <= limits.get(cat, 999): 
+    if 65 < price <= limits.get(cat, 999): 
         return True, cat
     return False, "PRICE"
 
@@ -93,14 +80,16 @@ def get_vinted_html(target_url):
     
     if DOG_ALIVE:
         try:
-            r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
+            # Wymuszenie JS (dynamic: true)
+            r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=25)
             if r.status_code == 200: return r.text
             elif r.status_code in [401, 403, 429]: DOG_ALIVE = False
         except: DOG_ALIVE = False
 
     if ANT_ALIVE:
         try:
-            r = requests.get("https://api.scrapingant.com/v2/general", params={"url": target_url, "x-api-key": SCRAPINGANT_KEY, "proxy_country": "PL"}, timeout=20)
+            # Użycie mocniejszego proxy w API Ant
+            r = requests.get("https://api.scrapingant.com/v2/extended", params={"url": target_url, "x-api-key": SCRAPINGANT_KEY, "proxy_country": "PL"}, timeout=25)
             if r.status_code == 200: return r.text
             elif r.status_code in [401, 403, 429]: ANT_ALIVE = False
         except: ANT_ALIVE = False
@@ -135,10 +124,15 @@ def scrape_olx(query):
 def scrape_vinted(query):
     v_url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first"
     html = get_vinted_html(v_url)
-    if not html: return
+    if not html:
+        log_debug(f"❌ Vinted PUSTY KOD dla: {query}")
+        return
     try:
         soup = BeautifulSoup(html, "html.parser")
         cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item")})
+        if not cards:
+            log_debug(f"⚠️ Vinted załadowany, ale 0 ofert dla: {query} (Blokada Datadome?)")
+        
         for card in cards[:12]:
             txt = card.get_text(separator=" ").lower()
             if any(x in txt for x in ["dni temu", "vakar", "days ago"]): continue
@@ -147,7 +141,8 @@ def scrape_vinted(query):
             if link and p_match:
                 price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                 process_item(link.get("title", "") or "Item", link['href'], price, "VINTED")
-    except: pass
+    except Exception as e:
+        log_debug(f"❌ Błąd parsowania Vinted: {e}")
 
 def process_item(title, url, price, src):
     global IS_FIRST_RUN
@@ -164,7 +159,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v19.20 | FULL ARSENAL (DS/DSi INCLUDED)")
+    log_debug("🚀 SNIPER v19.30 | VINTED RADAR ENABLED")
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", 
         "gameboy advance", "gameboy color", "pokemon etb", 
