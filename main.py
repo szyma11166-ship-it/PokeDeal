@@ -43,7 +43,7 @@ def is_night_time():
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "etui", "case", "uchwyt", "części", "gra ", "gry ", "game", "games"]): 
+    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "gra ", "gry ", "game", "games"]): 
         return False, "TRASH"
     
     cat = None
@@ -59,7 +59,7 @@ def is_interesting_item(title, price):
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
         elif any(x in t_f for x in ["nintendo ds", " dsi", " ds lite"]): cat = "DS_OLD"
-        elif any(x in t_f for x in ["gameboy", "gba", "pocket", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
+        elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
 
     if not cat: return False, "NO_CAT"
     
@@ -94,39 +94,50 @@ def scrape_vinted(query):
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
-    # 1. PRÓBA OLOSTEP (MINIMALISTYCZNA)
-    idx = OLO_INDEX % len(OLOSTEP_KEYS)
-    try:
-        r = requests.post(
-            "https://api.olostep.com/v1/scrapes", 
-            json={"url_to_scrape": target_url}, 
-            headers={"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}"}, 
-            timeout=30
-        )
-        if r.status_code == 200:
-            html = r.json().get('default_snapshot', {}).get('content', '')
-            items = extract_vinted_items(html)
-            if items:
-                log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) dla: {query}")
-                for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
-                return
+    # Próbujemy maksymalnie 2 razy różnymi kluczami OloStep, żeby nie zapętlić się w nieskończoność
+    for attempt in range(2):
+        idx = OLO_INDEX % len(OLOSTEP_KEYS)
+        try:
+            r = requests.post(
+                "https://api.olostep.com/v1/scrapes", 
+                json={"url_to_scrape": target_url}, 
+                headers={"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}"}, 
+                timeout=30
+            )
+            if r.status_code == 200:
+                html = r.json().get('default_snapshot', {}).get('content', '')
+                
+                # KLUCZOWE: Sprawdzamy czy OloStep dostał Datadome
+                if "datadome" in html.lower() or "challenge" in html.lower() or "captcha" in html.lower():
+                    log_debug(f"⚠️ [Olo-{idx}] Trafił na Datadome. Zmieniam klucz...")
+                    OLO_INDEX += 1
+                    continue # Próbujemy następnym kluczem
+                
+                items = extract_vinted_items(html)
+                if items:
+                    log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) dla: {query}")
+                    for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
+                    return
+                else:
+                    log_debug(f"ℹ️ [Olo-{idx}] Czysto (brak ofert) dla: {query}")
+                    return
             else:
-                log_debug(f"ℹ️ [Olo-{idx}] Pusto dla: {query}")
-        else:
-            log_debug(f"❌ [Olo-{idx}] Błąd {r.status_code}. Lecę psem...")
+                log_debug(f"❌ [Olo-{idx}] Błąd {r.status_code}. Zmieniam klucz...")
+                OLO_INDEX += 1
+        except:
+            log_debug(f"⚠️ [Olo-{idx}] Timeout. Zmieniam klucz...")
             OLO_INDEX += 1
-    except:
-        log_debug(f"⚠️ [Olo-{idx}] Timeout/Błąd. Lecę psem...")
-        OLO_INDEX += 1
 
-    # 2. AWARYJNY PIES (SCRAPINGDOG)
+    # AWARYJNY PIES (SCRAPINGDOG) - Odpali się tylko, gdy 2 kolejne klucze OloStep zawiodą
     try:
         r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=20)
         if r.status_code == 200:
-            items = extract_vinted_items(r.text)
-            if items:
-                log_debug(f"✅ [Dog] OK ({len(items)}) dla: {query}")
-                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+            html = r.text
+            if "datadome" not in html.lower():
+                items = extract_vinted_items(html)
+                if items:
+                    log_debug(f"✅ [Dog] OK ({len(items)}) dla: {query}")
+                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
     except: pass
 
 def scrape_olx(query):
@@ -154,7 +165,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v23.0 | STABLE RESET")
+    log_debug("🚀 SNIPER v23.5 | THE TRUTH")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     while True:
         if is_night_time():
@@ -167,5 +178,5 @@ if __name__ == "__main__":
             time.sleep(15)
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
-        log_debug(f"💤 Przerwa pińcet sekund. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
+        log_debug(f"💤 Przerwa 500s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
         time.sleep(500)
