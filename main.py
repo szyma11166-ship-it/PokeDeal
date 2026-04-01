@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os
+import re, time, random, hashlib, os, json
 import urllib.parse
 
 os.environ['TZ'] = 'Europe/Warsaw'
@@ -33,8 +33,6 @@ CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 OLO_INDEX = 0
-VINTED_COOLDOWN_UNTIL = 0
-VINTED_BLOCK_STREAK = 0
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -43,14 +41,12 @@ def is_interesting_item(title, price):
     t_f = title.lower()
     if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "gra ", "gry ", "game", "games"]): 
         return False, "TRASH"
-    
     cat = None
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f: cat = "FIRST_PARTNER"
         elif "etb" in t_f or "elite trainer" in t_f: cat = "TCG_ETB"
         elif any(x in t_f for x in ["display", "booster box", "bb", "boosterbox"]): cat = "TCG_BB"
         elif "bundle" in t_f: cat = "TCG_BUNDLE"
-    
     if not cat:
         if "ps vita" in t_f or "psvita" in t_f: cat = "VITA"
         elif "psp" in t_f and any(x in t_f for x in ["1004", "2004", "3004", "go", "street", "konsola"]): cat = "PSP"
@@ -58,7 +54,6 @@ def is_interesting_item(title, price):
         elif "2ds" in t_f: cat = "2DS"
         elif any(x in t_f for x in ["nintendo ds", " dsi", " ds lite"]): cat = "DS_OLD"
         elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
-
     if not cat: return False, "NO_CAT"
     
     limits = {"PSP": 250, "VITA": 650, "3DS": 500, "2DS": 350, "DS_OLD": 160, "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 750, "TCG_BUNDLE": 160, "FIRST_PARTNER": 120}
@@ -69,76 +64,75 @@ def extract_vinted_items(html):
     found = []
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
-    # Szukanie brutalne wszystkich linków z cenami
+    
+    # METODA 1: JSON State Extraction (Najskuteczniejsza)
+    try:
+        data_script = soup.find("script", id="__NEXT_DATA__")
+        if data_script:
+            js_data = json.loads(data_script.string)
+            # Ścieżka w JSONie Vinted: props -> pageProps -> catalog -> items
+            items_list = js_data.get('props', {}).get('pageProps', {}).get('catalog', {}).get('data', {}).get('items', [])
+            for it in items_list:
+                price = float(it.get('price', {}).get('amount', 0))
+                title = it.get('title', 'Item')
+                url = "https://www.vinted.pl" + it.get('url', '')
+                found.append({"title": title, "url": url, "price": price})
+            if found: return found
+    except: pass
+
+    # METODA 2: Brutal Link Scraping (Fallback)
     for a in soup.find_all("a", href=True):
         if "/items/" in a['href'] and "member" not in a['href']:
             txt = a.get_text(separator=" ")
-            if "zł" not in txt:
-                p = a.find_parent("div")
-                txt = p.get_text(separator=" ") if p else ""
             p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
             if p_match:
                 try:
                     price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
                     u = a['href']
-                    full_u = u if "vinted.pl" in u else f"https://www.vinted.pl{u}"
-                    if not any(f['url'] == full_u for f in found):
-                        found.append({"title": a.get("title") or "Vinted Item", "url": full_u, "price": price})
+                    found.append({"title": a.get("title", "Item"), "url": u if "vinted.pl" in u else f"https://www.vinted.pl{u}", "price": price})
                 except: continue
     return found
 
 def scrape_vinted(query):
-    global OLO_INDEX, VINTED_COOLDOWN_UNTIL, VINTED_BLOCK_STREAK
-    
-    if time.time() < VINTED_COOLDOWN_UNTIL:
-        return # Vinted odpoczywa
-
+    global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
-    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
+    # Zmieniamy URL na taki, który rzadziej triggeruje bot-checka (bez agresywnego sortowania na start)
+    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}"
     
-    idx = OLO_INDEX % len(OLOSTEP_KEYS)
-    try:
-        r = requests.post(
-            "https://api.olostep.com/v1/scrapes", 
-            json={
-                "url_to_scrape": target_url,
-                "render_js": True,
-                "wait_before_scraping": random.randint(1000, 3000)
-            }, 
-            headers={"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}"}, 
-            timeout=40
-        )
-        if r.status_code == 200:
-            html = r.json().get('default_snapshot', {}).get('content', '')
-            items = extract_vinted_items(html)
-            
-            if items:
-                log_debug(f"✅ [Olo-{idx}] Vinted OK ({len(items)}) | {query}")
-                VINTED_BLOCK_STREAK = 0
-                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                return
-            else:
-                # Jeśli strona jest pusta lub zawiera blokadę
-                if "vinted" not in html.lower() or any(x in html.lower() for x in ["datadome", "captcha", "robot"]):
-                    VINTED_BLOCK_STREAK += 1
-                    log_debug(f"⚠️ [Olo-{idx}] Vinted Blokada #{VINTED_BLOCK_STREAK}")
+    for _ in range(2):
+        idx = OLO_INDEX % len(OLOSTEP_KEYS)
+        try:
+            r = requests.post(
+                "https://api.olostep.com/v1/scrapes", 
+                json={
+                    "url_to_scrape": target_url,
+                    "render_js": True,
+                    "wait_before_scraping": 2500,
+                    "additional_request_headers": {
+                        "Referer": "https://www.google.com/",
+                        "Accept-Language": "pl-PL,pl;q=0.9"
+                    }
+                }, 
+                headers={"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}"}, 
+                timeout=45
+            )
+            if r.status_code == 200:
+                html = r.json().get('default_snapshot', {}).get('content', '')
+                items = extract_vinted_items(html)
+                if items:
+                    log_debug(f"✅ [Olo-{idx}] Vinted OK ({len(items)}) | {query}")
+                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                    return
                 else:
-                    log_debug(f"ℹ️ [Olo-{idx}] Vinted: Brak nowych ofert dla: {query}")
-        else:
-            VINTED_BLOCK_STREAK += 1
-    except:
-        VINTED_BLOCK_STREAK += 1
-    
-    OLO_INDEX += 1
-    
-    if VINTED_BLOCK_STREAK >= 3:
-        log_debug("🚨 ZBYT DUŻO BLOKAD. Vinted idzie spać na 15 minut...")
-        VINTED_COOLDOWN_UNTIL = time.time() + 900 # 15 min kary
-        VINTED_BLOCK_STREAK = 0
+                    log_debug(f"🥷 [Olo-{idx}] Pusta odpowiedź dla: {query}")
+            OLO_INDEX += 1
+        except:
+            OLO_INDEX += 1
+            time.sleep(2)
 
 def scrape_olx(query):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=20"
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200:
@@ -161,16 +155,16 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v26.0 | SURVIVAL MODE")
+    log_debug("🚀 SNIPER v27.0 | THE GHOST ENGINE")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     while True:
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
-            time.sleep(random.randint(5, 10))
+            time.sleep(random.randint(5, 8))
             scrape_vinted(q)
-            time.sleep(random.randint(10, 20))
+            time.sleep(random.randint(15, 25))
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
-        log_debug(f"💤 Przerwa 500s. Kolejny klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
-        time.sleep(500)
+        log_debug(f"💤 Przerwa 400s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
+        time.sleep(400)
