@@ -1,27 +1,35 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os
+import re, time, random, hashlib, os, json
 import urllib.parse
 
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- KONFIGURACJA ---
+# --- KLUCZE OLOSTEP (Twoja główna armia) ---
+OLOSTEP_KEYS = [
+    "olostep_koEUWUkQ7ue1e56xsJEmXBIwhFgNUWjvOT7U", "olostep_Jtz86lFTzVTyVnYr7Ci2LaMC0wnelqGB2kjJ",
+    "olostep_HNb7ahynRXVg053o9YYSCuoIZIe5PCI3PYQp", "olostep_ilStdJ4wxfJm80DhrKYUo5x9oGh5bQ1ex3vJ",
+    "olostep_F9a3YpVhC4rD1aoQXOxdW6NIRqVJpoF9ykY1", "olostep_h1B6t6i3o1LomV7wgkJRuTrKORCyfuwZ7Wtv",
+    "olostep_E1ULbEpkGVj3ebtbNl7GERlMh4yOWfsD9c1X", "olostep_uLmphHL0rHj1iikKHexEnHxItbHyTaUWtiLi",
+    "olostep_n8Y2d5FCsjrdtaqy5cGmT5nFiSMF8MeEE6O8", "olostep_r28K78wzg2GVLDVz4V6F1Qa0UdT17pN3Ratd",
+    "olostep_tP1WrjpuagOsYCdctCOQQx6cwTzkbVIJfUXw", "olostep_nFP0YwFWIdTUazbEIsivJRR5JepmdORVm9nv",
+    "olostep_yVHx982cBYQlfXZUDcjAezgbffQ1Ot2v4o42", "olostep_lv02DqXQIQQ6WF1PMLdQgTePaKeVTmjbaLy8",
+    "olostep_4HAwlpNG0bJu9a9YFjM3IiAjOFarGaYeUZEX", "olostep_cJuSrUHAdGe97mdiuNilJs6DQFN934tByRAb",
+    "olostep_Ismu4Th5YKA4NV5wTYUqNQL2Eod2pOWfdCEK", "olostep_yZ8GRKuSoA3deLXYxIMdOJZezFYOxVWkSKjH",
+    "olostep_BwAhFJuK9ZzyOqtQEDuX0QwxWmAc6ZSj65HJ",
+    # Starsze klucze:
+    "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv", "olostep_J3hXd9tU8hcP8qTHqqmFhzzrsaoG0V4neNy7",
+    "olostep_Aok0E95IbyvijgPCeS4qLEFv0FJ58x3PxsP0", "olostep_Ai2L7IEzCRI8WY1Ofa10aHNj8PpT1p0wV18W",
+    "olostep_uZYru9zWGHl60W4CO7aj5T2Dud48id3MmhPr", "olostep_gu9B52cJ30OV20ShHwLiMbfHUcFB1F3iVXBd",
+    "olostep_MSTMsMkYk0AdyC8JoGD7hk2wrhsC3EzUmWt1", "olostep_KuvN0l1m3DqzjPvIVhsvp4hSBZBZ8rhLOnt6",
+    "olostep_lxVgFBkSFN8LOeHLpBBBBRmwZm5YsNYC6b7P", "olostep_TEZ2ySYKVa93lLRbH45NDbLeyIck1ghRgEhc"
+]
+
+# --- AWARYJNE ---
 SCRAPINGDOG_KEY = "69cc2236cca5a0331e084197"
 SCRAPINGANT_KEY = "5587f74b5a154af9a235f145e72cfdec"
-OLOSTEP_KEYS = [
-    "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv",
-    "olostep_J3hXd9tU8hcP8qTHqqmFhzzrsaoG0V4neNy7",
-    "olostep_Aok0E95IbyvijgPCeS4qLEFv0FJ58x3PxsP0",
-    "olostep_Ai2L7IEzCRI8WY1Ofa10aHNj8PpT1p0wV18W",
-    "olostep_uZYru9zWGHl60W4CO7aj5T2Dud48id3MmhPr",
-    "olostep_gu9B52cJ30OV20ShHwLiMbfHUcFB1F3iVXBd",
-    "olostep_MSTMsMkYk0AdyC8JoGD7hk2wrhsC3EzUmWt1",
-    "olostep_KuvN0l1m3DqzjPvIVhsvp4hSBZBZ8rhLOnt6",
-    "olostep_lxVgFBkSFN8LOeHLpBBBBRmwZm5YsNYC6b7P",
-    "olostep_TEZ2ySYKVa93lLRbH45NDbLeyIck1ghRgEhc"
-]
 
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
@@ -38,9 +46,10 @@ def is_night_time():
     return h >= 23 or h < 6
 
 def is_blocked_html(html):
-    if not html or len(html) < 1500: return True
+    if not html or len(html) < 2000: return True
     h_l = html.lower()
-    return any(x in h_l for x in ["datadome", "captcha", "robot check", "just a moment"])
+    if any(x in h_l for x in ["datadome", "captcha", "verify you are human", "robot check", "just a moment"]): return True
+    return False
 
 def is_interesting_item(title, price):
     t_f = title.lower()
@@ -64,9 +73,9 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CAT"
     
-    # TWOJE CENY:
+    # TWOJE CENY (BEZ ZMIAN):
     limits = {"PSP": 250, "VITA": 650, "3DS": 500, "2DS": 350, "DS_OLD": 160, "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 750, "TCG_BUNDLE": 160, "FIRST_PARTNER": 120}
-    if 49 <= price <= limits.get(cat, 1000): return True, cat
+    if 49 < price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
 
 def extract_vinted_items(html):
@@ -74,72 +83,73 @@ def extract_vinted_items(html):
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
     
-    # Szukamy po kontenerach i linkach (najbardziej odporna metoda)
-    items = soup.find_all(["div", "a"], {"data-testid": re.compile(r"grid-item|product-item")})
-    if not items:
-        items = soup.find_all("div", class_=re.compile(r"feed-grid__item|item-card"))
-
-    for item in items:
-        try:
-            link_tag = item if item.name == "a" else item.find("a", href=True)
-            if not link_tag: continue
-            
-            href = link_tag['href']
-            if "/items/" not in href: continue
-            
-            # Cena: szukamy tekstu z "zł" wewnątrz kontenera
-            txt = item.get_text(separator=" ").replace("\xa0", " ")
-            p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
-            
-            if p_match:
+    # Najbardziej brutalna metoda szukania linków i cen obok siebie
+    for a in soup.find_all("a", href=True):
+        href = a['href']
+        if "/items/" not in href or "member" in href: continue
+        
+        parent = a.find_parent("div", class_=re.compile(r"item|card|grid", re.I))
+        if not parent: parent = a.parent.parent
+        
+        txt = parent.get_text(separator=" ").replace("\xa0", " ")
+        p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
+        
+        if p_match:
+            try:
                 price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                title = link_tag.get("title") or item.find("img").get("alt", "") if item.find("img") else "Vinted Item"
+                title = a.get("title") or "Vinted Item"
                 full_url = href if "vinted.pl" in href else f"https://www.vinted.pl{href}"
-                
                 if not any(f['url'] == full_url for f in found):
                     found.append({"title": title, "url": full_url, "price": price})
-        except: continue
-    
-    # Fallback: Jeśli nic nie znaleźliśmy po klasach, szukamy wszystkich linków /items/
-    if not found:
-        for a in soup.find_all("a", href=True):
-            if "/items/" in a['href']:
-                p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", a.get_text())
-                if p_match:
-                    p = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                    found.append({"title": "Vinted Item", "url": f"https://www.vinted.pl{a['href']}", "price": p})
-
+            except: continue
     return found[:15]
 
 def scrape_vinted_with_retries(query):
     global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
-    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
-    
-    # 1. ScrapingDog
-    try:
-        r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=35)
-        items = extract_vinted_items(r.text) if r.status_code == 200 and not is_blocked_html(r.text) else []
-        if items:
-            for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-            return
-    except: pass
+    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first&currency=PLN"
 
-    # 2. OloStep (Retry)
-    while OLO_INDEX < len(OLOSTEP_KEYS):
+    # --- 1. OLOSTEP (PIERWSZY FRONT) ---
+    start_search = OLO_INDEX
+    for i in range(start_search, len(OLOSTEP_KEYS)):
+        current_key = OLOSTEP_KEYS[i]
         try:
-            h = {"Authorization": f"Bearer {OLOSTEP_KEYS[OLO_INDEX]}", "Content-Type": "application/json"}
-            r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=45)
+            h = {"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"}
+            r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=40)
             if r.status_code == 200:
                 html = r.json().get('default_snapshot', {}).get('content', '')
-                items = extract_vinted_items(html) if not is_blocked_html(html) else []
-                if items:
-                    for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
-                    return
+                if not is_blocked_html(html):
+                    items = extract_vinted_items(html)
+                    if items:
+                        log_debug(f"✅ [OloStep-{i}] Trafił {len(items)} ofert dla: {query}")
+                        for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
+                        return
+                    else:
+                        # Jeśli Olo wbił, ale pusto - nie zwiększamy indeksu, to może być brak ofert
+                        log_debug(f"ℹ️ [OloStep-{i}] Wszedł, ale brak ofert dla: {query}")
+                        return
+                else:
+                    log_debug(f"⚠️ [OloStep-{i}] Zablokowany/Pusty. Zmieniam klucz...")
+                    OLO_INDEX += 1
+            else:
+                log_debug(f"❌ [OloStep-{i}] Błąd API ({r.status_code}). Zmieniam klucz...")
+                OLO_INDEX += 1
+        except Exception as e:
+            log_debug(f"❌ [OloStep-{i}] Wyjątek. Zmieniam klucz...")
             OLO_INDEX += 1
-        except: OLO_INDEX += 1
-    
-    log_debug(f"❌ Vinted Brak Wyników: {query}")
+
+    # --- 2. FALLBACK (DOG/ANT) ---
+    try:
+        r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=30)
+        if r.status_code == 200 and not is_blocked_html(r.text):
+            items = extract_vinted_items(r.text)
+            if items:
+                log_debug(f"✅ [Dog] Trafił {len(items)} dla: {query}")
+                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                return
+    except: pass
+
+    log_debug(f"❌ Vinted Brak Wyników (Wszystkie API): {query}")
 
 def scrape_olx(query):
     try:
@@ -168,13 +178,14 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v20.0 | BACK TO BASICS")
+    log_debug("🚀 SNIPER v20.5 | OLO-FIRST | NEW KEYS")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     
     while True:
         if is_night_time():
             log_debug("🌙 Nocna pauza..."); time.sleep(1800); continue
         
+        # Resetujemy indeks kluczy rano
         if time.strftime("%H:%M") == "06:00": OLO_INDEX = 0
 
         random.shuffle(QUERIES)
@@ -187,4 +198,5 @@ if __name__ == "__main__":
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
         
-        time.sleep(900) # TWOJE 15 MINUT
+        log_debug(f"💤 Śpimy 600s (Olo Index: {OLO_INDEX})")
+        time.sleep(600)
