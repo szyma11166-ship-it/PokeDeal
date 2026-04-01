@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os, json
+import re, time, random, hashlib, os
 import urllib.parse
 
 os.environ['TZ'] = 'Europe/Warsaw'
@@ -65,40 +65,52 @@ def extract_vinted_items(html):
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
     
-    # METODA 1: JSON State Extraction (Najskuteczniejsza)
-    try:
-        data_script = soup.find("script", id="__NEXT_DATA__")
-        if data_script:
-            js_data = json.loads(data_script.string)
-            # Ścieżka w JSONie Vinted: props -> pageProps -> catalog -> items
-            items_list = js_data.get('props', {}).get('pageProps', {}).get('catalog', {}).get('data', {}).get('items', [])
-            for it in items_list:
-                price = float(it.get('price', {}).get('amount', 0))
-                title = it.get('title', 'Item')
-                url = "https://www.vinted.pl" + it.get('url', '')
-                found.append({"title": title, "url": url, "price": price})
-            if found: return found
-    except: pass
+    # Krok 1: Bezpośrednie szukanie kafelków ogłoszeń (najbardziej niezawodne na czystym HTML)
+    items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
+    if not items:
+        items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
+        
+    for item in items:
+        link = item.find("a", href=True)
+        if not link or "/items/" not in link['href']: continue
+        
+        # Wyciąganie ceny brutalnie z całego tekstu kafelka
+        price_texts = re.findall(r"(\d+[\d\s,.]*)\s?zł", item.get_text(separator=" "))
+        if price_texts:
+            try:
+                price = float(price_texts[0].replace(",", ".").replace(" ", ""))
+                title = link.get("title") or "Item"
+                url = link['href']
+                full_url = url if "vinted.pl" in url else f"https://www.vinted.pl{url}"
+                if not any(f['url'] == full_url for f in found):
+                    found.append({"title": title, "url": full_url, "price": price})
+            except: continue
 
-    # METODA 2: Brutal Link Scraping (Fallback)
-    for a in soup.find_all("a", href=True):
-        if "/items/" in a['href'] and "member" not in a['href']:
-            txt = a.get_text(separator=" ")
-            p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
-            if p_match:
-                try:
-                    price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                    u = a['href']
-                    found.append({"title": a.get("title", "Item"), "url": u if "vinted.pl" in u else f"https://www.vinted.pl{u}", "price": price})
-                except: continue
+    # Krok 2: Fallback absolutny, jeśli struktura Vinted była inna
+    if not found:
+        for a in soup.find_all("a", href=True):
+            if "/items/" in a['href'] and "member" not in a['href']:
+                parent = a.parent.parent if a.parent else None
+                txt = parent.get_text(separator=" ") if parent else a.get_text(separator=" ")
+                p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
+                if p_match:
+                    try:
+                        price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
+                        u = a['href']
+                        full_u = u if "vinted.pl" in u else f"https://www.vinted.pl{u}"
+                        if not any(f['url'] == full_u for f in found):
+                            found.append({"title": a.get("title", "Item"), "url": full_u, "price": price})
+                    except: continue
     return found
 
 def scrape_vinted(query):
     global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
-    # Zmieniamy URL na taki, który rzadziej triggeruje bot-checka (bez agresywnego sortowania na start)
-    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}"
+    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
+    success = False
+    
+    # Próba OloStep (bez zbędnego render_js)
     for _ in range(2):
         idx = OLO_INDEX % len(OLOSTEP_KEYS)
         try:
@@ -106,29 +118,50 @@ def scrape_vinted(query):
                 "https://api.olostep.com/v1/scrapes", 
                 json={
                     "url_to_scrape": target_url,
-                    "render_js": True,
-                    "wait_before_scraping": 2500,
-                    "additional_request_headers": {
-                        "Referer": "https://www.google.com/",
-                        "Accept-Language": "pl-PL,pl;q=0.9"
-                    }
+                    "render_js": False, # WYLĄCZONE - wracamy do czystego szybkiego HTML
                 }, 
                 headers={"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}"}, 
-                timeout=45
+                timeout=25
             )
+            
             if r.status_code == 200:
                 html = r.json().get('default_snapshot', {}).get('content', '')
-                items = extract_vinted_items(html)
-                if items:
-                    log_debug(f"✅ [Olo-{idx}] Vinted OK ({len(items)}) | {query}")
-                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                    return
+                
+                # Szybki check czy to nie Datadome
+                if "datadome" in html.lower() or "challenge" in html.lower():
+                    log_debug(f"⚠️ [Olo-{idx}] Odrzucone (Datadome). Zmieniam...")
                 else:
-                    log_debug(f"🥷 [Olo-{idx}] Pusta odpowiedź dla: {query}")
+                    items = extract_vinted_items(html)
+                    if items:
+                        log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) | {query}")
+                        for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                        success = True
+                        break
+                    else:
+                        if "vinted" not in html.lower():
+                            log_debug(f"🥷 [Olo-{idx}] Pusta strona/Ban dla: {query}")
+                        else:
+                            log_debug(f"ℹ️ [Olo-{idx}] Brak ofert dla: {query}")
+                            success = True
+                            break
             OLO_INDEX += 1
-        except:
+        except Exception as e:
             OLO_INDEX += 1
-            time.sleep(2)
+    
+    # Próba ScrapingDog jeśli Olo zawiodło
+    if not success:
+        try:
+            r = requests.get(
+                "https://api.scrapingdog.com/scrape", 
+                params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, 
+                timeout=20
+            )
+            if r.status_code == 200:
+                items = extract_vinted_items(r.text)
+                if items:
+                    log_debug(f"✅ [Dog-Free] OK ({len(items)}) | {query}")
+                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+        except: pass
 
 def scrape_olx(query):
     try:
@@ -155,15 +188,15 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v27.0 | THE GHOST ENGINE")
+    log_debug("🚀 SNIPER v28.0 | RETRO-BYPASS")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     while True:
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
-            time.sleep(random.randint(5, 8))
+            time.sleep(random.randint(4, 7))
             scrape_vinted(q)
-            time.sleep(random.randint(15, 25))
+            time.sleep(random.randint(12, 18))
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
         log_debug(f"💤 Przerwa 400s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
