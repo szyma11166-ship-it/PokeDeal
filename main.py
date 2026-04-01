@@ -43,7 +43,7 @@ def is_night_time():
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "gra ", "gry ", "game", "games"]): 
+    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "etui", "case", "uchwyt", "części", "gra ", "gry ", "game", "games"]): 
         return False, "TRASH"
     
     cat = None
@@ -59,7 +59,7 @@ def is_interesting_item(title, price):
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
         elif any(x in t_f for x in ["nintendo ds", " dsi", " ds lite"]): cat = "DS_OLD"
-        elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
+        elif any(x in t_f for x in ["gameboy", "gba", "pocket", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
 
     if not cat: return False, "NO_CAT"
     
@@ -167,5 +167,5 @@ if __name__ == "__main__":
             time.sleep(15)
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
-        log_debug(f"💤 Przerwa 600s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
-        time.sleep(600)
+        log_debug(f"💤 Przerwa pińcet sekund. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
+        time.sleep(500)
