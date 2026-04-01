@@ -94,7 +94,7 @@ def scrape_vinted(query):
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
-    # Próbujemy maksymalnie 2 razy różnymi kluczami OloStep, żeby nie zapętlić się w nieskończoność
+    # Próbujemy maksymalnie 2 razy różnymi kluczami OloStep
     for attempt in range(2):
         idx = OLO_INDEX % len(OLOSTEP_KEYS)
         try:
@@ -107,11 +107,10 @@ def scrape_vinted(query):
             if r.status_code == 200:
                 html = r.json().get('default_snapshot', {}).get('content', '')
                 
-                # KLUCZOWE: Sprawdzamy czy OloStep dostał Datadome
-                if "datadome" in html.lower() or "challenge" in html.lower() or "captcha" in html.lower():
-                    log_debug(f"⚠️ [Olo-{idx}] Trafił na Datadome. Zmieniam klucz...")
+                if "datadome" in html.lower() or "challenge" in html.lower() or "captcha" in html.lower() or "access denied" in html.lower():
+                    log_debug(f"⚠️ [Olo-{idx}] Twardy Ban (Datadome). Zmieniam klucz...")
                     OLO_INDEX += 1
-                    continue # Próbujemy następnym kluczem
+                    continue
                 
                 items = extract_vinted_items(html)
                 if items:
@@ -119,8 +118,10 @@ def scrape_vinted(query):
                     for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
                     return
                 else:
-                    log_debug(f"ℹ️ [Olo-{idx}] Czysto (brak ofert) dla: {query}")
-                    return
+                    # KLUCZOWA ZMIANA PARANOIKA: Brak wyników = Cichy Ban lub pusta strona bez JS
+                    log_debug(f"🥷 [Olo-{idx}] Cichy Ban / Pusty Render dla: {query}. Zmieniam klucz...")
+                    OLO_INDEX += 1
+                    continue
             else:
                 log_debug(f"❌ [Olo-{idx}] Błąd {r.status_code}. Zmieniam klucz...")
                 OLO_INDEX += 1
@@ -128,7 +129,7 @@ def scrape_vinted(query):
             log_debug(f"⚠️ [Olo-{idx}] Timeout. Zmieniam klucz...")
             OLO_INDEX += 1
 
-    # AWARYJNY PIES (SCRAPINGDOG) - Odpali się tylko, gdy 2 kolejne klucze OloStep zawiodą
+    # AWARYJNY PIES (SCRAPINGDOG) - Odpali się tylko gdy OloStep wyrzuci z siebie 2 "puste" strony z rzędu
     try:
         r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=20)
         if r.status_code == 200:
@@ -138,6 +139,8 @@ def scrape_vinted(query):
                 if items:
                     log_debug(f"✅ [Dog] OK ({len(items)}) dla: {query}")
                     for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                else:
+                    log_debug(f"❌ [Dog] Też dostał cichego bana dla: {query}")
     except: pass
 
 def scrape_olx(query):
@@ -165,7 +168,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v23.5 | THE TRUTH")
+    log_debug("🚀 SNIPER v24.0 | PARANOIA MODE")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     while True:
         if is_night_time():
