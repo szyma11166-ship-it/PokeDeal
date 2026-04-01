@@ -1,13 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os, json
+import re, time, random, hashlib, os
 import urllib.parse
 
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- KLUCZE (Bez zmian) ---
+# --- KONFIGURACJA ---
 SCRAPINGDOG_KEY = "69cc2236cca5a0331e084197"
 SCRAPINGANT_KEY = "5587f74b5a154af9a235f145e72cfdec"
 OLOSTEP_KEYS = [
@@ -37,15 +37,10 @@ def is_night_time():
     h = int(time.strftime("%H"))
     return h >= 23 or h < 6
 
-def get_html_title(html):
-    if not html: return "PUSTY HTML"
-    match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE)
-    return match.group(1).strip() if match else "BRAK TYTUŁU"
-
 def is_blocked_html(html):
-    if not html or len(html) < 2500: return True
+    if not html or len(html) < 1500: return True
     h_l = html.lower()
-    return any(x in h_l for x in ["datadome", "captcha", "verify you are human", "robot check", "just a moment"])
+    return any(x in h_l for x in ["datadome", "captcha", "robot check", "just a moment"])
 
 def is_interesting_item(title, price):
     t_f = title.lower()
@@ -69,75 +64,68 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CAT"
     
+    # TWOJE CENY:
     limits = {"PSP": 250, "VITA": 650, "3DS": 500, "2DS": 350, "DS_OLD": 160, "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 750, "TCG_BUNDLE": 160, "FIRST_PARTNER": 120}
-    if 49 < price <= limits.get(cat, 1000): return True, cat
+    if 49 <= price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
 
 def extract_vinted_items(html):
     found = []
     if not html: return found
+    soup = BeautifulSoup(html, "html.parser")
     
-    # METODA 1: SZUKANIE W JSON (Najskuteczniejsza)
-    try:
-        # Vinted często trzyma dane w tagu script z id "z-vinted-dotnet-initial-state" lub podobnym
-        json_blobs = re.findall(r'<script type="application/json"[^>]*>(.*?)</script>', html)
-        for blob in json_blobs:
-            if '"items"' in blob and '"price"' in blob:
-                data = json.loads(blob)
-                # Przeszukiwanie zagnieżdżonego słownika w poszukiwaniu listy 'items'
-                def find_items(d):
-                    if isinstance(d, dict):
-                        if 'items' in d and isinstance(d['items'], list):
-                            return d['items']
-                        for v in d.values():
-                            res = find_items(v)
-                            if res: return res
-                    elif isinstance(d, list):
-                        for i in d:
-                            res = find_items(i)
-                            if res: return res
-                    return None
-                
-                items_list = find_items(data)
-                if items_list:
-                    for it in items_list:
-                        title = it.get('title') or it.get('name')
-                        url = it.get('url')
-                        price = it.get('price', {}).get('amount') or it.get('price')
-                        if title and url and price:
-                            full_url = url if "vinted.pl" in url else f"https://www.vinted.pl{url}"
-                            found.append({"title": str(title), "url": full_url, "price": float(price)})
-    except: pass
+    # Szukamy po kontenerach i linkach (najbardziej odporna metoda)
+    items = soup.find_all(["div", "a"], {"data-testid": re.compile(r"grid-item|product-item")})
+    if not items:
+        items = soup.find_all("div", class_=re.compile(r"feed-grid__item|item-card"))
 
-    # METODA 2: FALLBACK (Jeśli JSON zawiedzie, szukamy prymitywnie po linkach i cenach)
+    for item in items:
+        try:
+            link_tag = item if item.name == "a" else item.find("a", href=True)
+            if not link_tag: continue
+            
+            href = link_tag['href']
+            if "/items/" not in href: continue
+            
+            # Cena: szukamy tekstu z "zł" wewnątrz kontenera
+            txt = item.get_text(separator=" ").replace("\xa0", " ")
+            p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
+            
+            if p_match:
+                price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
+                title = link_tag.get("title") or item.find("img").get("alt", "") if item.find("img") else "Vinted Item"
+                full_url = href if "vinted.pl" in href else f"https://www.vinted.pl{href}"
+                
+                if not any(f['url'] == full_url for f in found):
+                    found.append({"title": title, "url": full_url, "price": price})
+        except: continue
+    
+    # Fallback: Jeśli nic nie znaleźliśmy po klasach, szukamy wszystkich linków /items/
     if not found:
-        soup = BeautifulSoup(html, "html.parser")
         for a in soup.find_all("a", href=True):
-            if "/items/" in a['href'] and "zł" in a.get_text():
-                txt = a.get_text(separator=" ").lower()
-                p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
+            if "/items/" in a['href']:
+                p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", a.get_text())
                 if p_match:
                     p = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                    found.append({"title": a.get("title") or "Vinted Item", "url": f"https://www.vinted.pl{a['href']}", "price": p})
+                    found.append({"title": "Vinted Item", "url": f"https://www.vinted.pl{a['href']}", "price": p})
 
-    return found
+    return found[:15]
 
 def scrape_vinted_with_retries(query):
     global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
-    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first&currency=PLN"
+    target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
-    # Próba 1: ScrapingDog
+    # 1. ScrapingDog
     try:
         r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=35)
         items = extract_vinted_items(r.text) if r.status_code == 200 and not is_blocked_html(r.text) else []
         if items:
-            log_debug(f"💎 Vinted (Dog) wyrwał {len(items)} ogłoszeń dla: {query}")
             for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
             return
     except: pass
 
-    # Próba 2: OloStep (Tylko jeśli Dog zawiedzie)
+    # 2. OloStep (Retry)
     while OLO_INDEX < len(OLOSTEP_KEYS):
         try:
             h = {"Authorization": f"Bearer {OLOSTEP_KEYS[OLO_INDEX]}", "Content-Type": "application/json"}
@@ -146,13 +134,12 @@ def scrape_vinted_with_retries(query):
                 html = r.json().get('default_snapshot', {}).get('content', '')
                 items = extract_vinted_items(html) if not is_blocked_html(html) else []
                 if items:
-                    log_debug(f"💎 Vinted (OloStep {OLO_INDEX+1}) wyrwał {len(items)} ogłoszeń dla: {query}")
                     for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
                     return
             OLO_INDEX += 1
         except: OLO_INDEX += 1
     
-    log_debug(f"❌ Vinted PUSTE mimo JSON Mining: {query}")
+    log_debug(f"❌ Vinted Brak Wyników: {query}")
 
 def scrape_olx(query):
     try:
@@ -181,7 +168,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v19.90 | JSON DEEP MINING MODE")
+    log_debug("🚀 SNIPER v20.0 | BACK TO BASICS")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     
     while True:
@@ -195,9 +182,9 @@ if __name__ == "__main__":
             scrape_olx(q)
             time.sleep(random.randint(5, 10))
             scrape_vinted_with_retries(q)
-            time.sleep(random.randint(20, 30))
+            time.sleep(random.randint(15, 25))
         
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
         
-        time.sleep(900)
+        time.sleep(900) # TWOJE 15 MINUT
