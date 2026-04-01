@@ -1,12 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os
+import urllib.parse
 
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- KLUCZE (Zweryfikowane) ---
+# --- KLUCZE ---
 SCRAPINGDOG_KEY = "69cc2236cca5a0331e084197"
 SCRAPINGANT_KEY = "5587f74b5a154af9a235f145e72cfdec"
 OLOSTEP_KEYS = [
@@ -36,14 +37,18 @@ def is_night_time():
     godzina_pl = int(time.strftime("%H"))
     return godzina_pl >= 23 or godzina_pl < 6
 
+def get_html_title(html):
+    if not html: return "PUSTY HTML"
+    match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE)
+    return match.group(1).strip() if match else "BRAK TYTUŁU"
+
 def is_blocked_html(html):
-    if not html or len(html) < 2000: return True # Vinted zawsze waży więcej niż 2KB
+    if not html or len(html) < 2000: return True
     h_l = html.lower()
-    return any(x in h_l for x in ["datadome", "captcha", "cloudflare", "verify you are human", "robot check"])
+    return any(x in h_l for x in ["datadome", "captcha", "cloudflare", "verify you are human", "robot check", "just a moment", "challenge"])
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    # ANTY-SPAM NA GRY (Oszczędzamy Telegrama)
     if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "gra", "gry", "game", "games"]): 
         return False, "TRASH"
     
@@ -65,14 +70,13 @@ def is_interesting_item(title, price):
     if not cat: return False, "NO_CAT"
     
     limits = {"PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, "DS_OLD": 150, "RETRO": 300, "TCG_ETB": 350, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 120}
-    if 65 < price <= limits.get(cat, 999): return True, cat
+    if 49 < price <= limits.get(cat, 999): return True, cat
     return False, "PRICE"
 
 def extract_vinted_items(html):
     if not html: return []
     soup = BeautifulSoup(html, "html.parser")
     found = []
-    # Szukamy kart produktów
     cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item|product-item")})
     if not cards: cards = soup.find_all("div", class_=re.compile(r"feed-grid__item|item-card"))
     
@@ -89,11 +93,17 @@ def extract_vinted_items(html):
 
 def scrape_vinted_with_retries(query):
     global OLO_INDEX
-    target_url = f"https://www.vinted.pl/catalog?search_text={query}&order=newest_first&currency=PLN"
     
+    # NAPRAWA BŁĘDU: Profesjonalne kodowanie spacji i znaków
+    q_encoded = urllib.parse.quote_plus(query)
+    target_url = f"https://www.vinted.pl/catalog?search_text={q_encoded}&order=newest_first&currency=PLN"
+    
+    last_html_title = ""
+
     # 1. ScrapingDog
     try:
         r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=30)
+        last_html_title = get_html_title(r.text) if r.text else "Brak odpowiedzi"
         items = extract_vinted_items(r.text) if r.status_code == 200 and not is_blocked_html(r.text) else []
         if items: 
             for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
@@ -103,33 +113,37 @@ def scrape_vinted_with_retries(query):
     # 2. ScrapingAnt
     try:
         r = requests.get("https://api.scrapingant.com/v2/extended", params={"url": target_url, "x-api-key": SCRAPINGANT_KEY, "proxy_country": "PL"}, timeout=30)
+        if not items and r.text: last_html_title = get_html_title(r.text)
         items = extract_vinted_items(r.text) if r.status_code == 200 and not is_blocked_html(r.text) else []
         if items: 
             for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
             return
     except: pass
 
-    # 3. OloStep (Tyle kluczy ile trzeba, aż znajdziemy coś)
+    # 3. OloStep
     start_olo = OLO_INDEX
     for i in range(start_olo, len(OLOSTEP_KEYS)):
         try:
             h = {"Authorization": f"Bearer {OLOSTEP_KEYS[i]}", "Content-Type": "application/json"}
-            r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=35)
+            r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=40)
             if r.status_code == 200:
                 html = r.json().get('default_snapshot', {}).get('content', '')
+                if html: last_html_title = get_html_title(html)
                 items = extract_vinted_items(html) if not is_blocked_html(html) else []
                 if items:
                     for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
-                    return # Sukces!
-            OLO_INDEX += 1 # Spalony klucz
+                    return
+            OLO_INDEX += 1
         except: OLO_INDEX += 1
     
-    log_debug(f"❌ Vinted poddało się dla: {query} (Brak wyników po wszystkich API)")
+    # RENTGEN W LOGU
+    log_debug(f"❌ Vinted PUSTE dla: {query} | Zwrócony tytuł strony: '{last_html_title[:40]}'")
 
 def scrape_olx(query):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&limit=20"
+        q_encoded = urllib.parse.quote_plus(query)
+        url = f"https://www.olx.pl/api/v1/offers/?query={q_encoded}&sort_by=created_at:desc&limit=20"
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200:
             for o in r.json().get('data', []):
@@ -152,14 +166,13 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v19.60 | AGGRESSIVE RETRY MODE")
+    log_debug("🚀 SNIPER v19.70 | URL FIX & X-RAY DEBUG")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     
     while True:
         if is_night_time():
             log_debug("🌙 Nocna pauza..."); time.sleep(1800); continue
         
-        # Reset OLO raz na dobę
         if time.strftime("%H:%M") == "06:00": OLO_INDEX = 0
 
         random.shuffle(QUERIES)
