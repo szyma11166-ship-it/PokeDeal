@@ -2,15 +2,15 @@ import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os, json
 
-# Wymuszenie polskiej strefy czasowej (działa na serwerach Linux/Railway)
+# Wymuszenie polskiej strefy czasowej
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- ARSENAŁ KLUCZY (PRO SHIELDS) ---
+# --- ARSENAŁ KLUCZY ---
 SCRAPINGDOG_KEY = "69cc2236cca5a0331e084197"
 SCRAPINGANT_KEY = "5587f74b5a154af9a235f145e72cfdec"
-SCRAPENINJA_KEY = "YOUR-APIROAD-KEY" # <-- Podmień, jeśli wygenerowałeś klucz
+SCRAPENINJA_KEY = "YOUR-APIROAD-KEY" 
 
 OLOSTEP_KEYS = [
     "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv",
@@ -30,7 +30,7 @@ STAKEWATCH_URL = "https://agent.stakewatch.dev/api/scrape?url="
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
-# SYSTEM ZARZĄDZANIA PALIWEM
+# SYSTEM
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 OLO_INDEX = 0
@@ -42,40 +42,41 @@ def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def is_night_time():
-    # Teraz bot posługuje się dokładnie polskim czasem!
-    # Od 23:00 (włącznie) do 05:59 rano.
     godzina_pl = int(time.strftime("%H"))
     return godzina_pl >= 23 or godzina_pl < 6
 
 def is_interesting_item(title, price):
     t_f = title.lower()
     
-    # Czarna lista (Nienaruszona)
     if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części"]): 
         return False, "TRASH"
     
     cat = None
+    # POKEMON
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f: cat = "FIRST_PARTNER"
         elif any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
         elif any(x in t_f for x in ["display", "booster box", "bb", "boosterbox"]): cat = "TCG_BB"
         elif any(x in t_f for x in ["bundle", "booster bundle"]): cat = "TCG_BUNDLE"
     
+    # KONSOLE
     if not cat:
         if any(x in t_f for x in ["ps vita", "psvita"]): cat = "VITA"
-        elif "psp" in t_f and any(x in t_f for x in ["konsola", "1004", "2004", "3004", "go", "street", "e1004"]): cat = "PSP"
+        elif "psp" in t_f and any(x in t_f for x in ["1004", "2004", "3004", "go", "street", "e1004", "konsola"]): cat = "PSP"
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
+        # PRZYWRÓCONE: DS i DSi
+        elif any(x in t_f for x in ["nintendo ds", " dsi ", " ds lite ", " dsi xl "]): cat = "DS_OLD"
         elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
 
     if not cat: return False, "NO_CAT"
     
-    # Twoje ceny docelowe
     limits = {
         "PSP": 280, 
         "VITA": 650, 
         "3DS": 500, 
         "2DS": 450, 
+        "DS_OLD": 150, # Limit dla DS/DSi
         "RETRO": 300, 
         "TCG_ETB": 350, 
         "TCG_BB": 700, 
@@ -90,71 +91,39 @@ def is_interesting_item(title, price):
 def get_vinted_html(target_url):
     global OLO_INDEX, DOG_ALIVE, ANT_ALIVE, NINJA_ALIVE
     
-    # TARCZA 1: ScrapingDog
     if DOG_ALIVE:
         try:
-            log_debug("🔄 Shield: ScrapingDog...")
             r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
             if r.status_code == 200: return r.text
-            elif r.status_code in [401, 403, 429]: 
-                log_debug("⚠️ ScrapingDog OFF. Skok...")
-                DOG_ALIVE = False
+            elif r.status_code in [401, 403, 429]: DOG_ALIVE = False
         except: DOG_ALIVE = False
 
-    # TARCZA 2: ScrapingAnt
     if ANT_ALIVE:
         try:
-            log_debug("🔄 Shield: ScrapingAnt...")
             r = requests.get("https://api.scrapingant.com/v2/general", params={"url": target_url, "x-api-key": SCRAPINGANT_KEY, "proxy_country": "PL"}, timeout=20)
             if r.status_code == 200: return r.text
-            elif r.status_code in [401, 403, 429]:
-                log_debug("⚠️ ScrapingAnt OFF. Skok...")
-                ANT_ALIVE = False
+            elif r.status_code in [401, 403, 429]: ANT_ALIVE = False
         except: ANT_ALIVE = False
 
-    # TARCZA 3: ScrapeNinja
-    if NINJA_ALIVE and SCRAPENINJA_KEY != "YOUR-APIROAD-KEY":
-        try:
-            log_debug("🔄 Shield: ScrapeNinja...")
-            h = {"Content-Type": "application/json", "x-apiroad-key": SCRAPENINJA_KEY}
-            p = {"url": target_url, "method": "GET", "geo": "de"}
-            r = requests.post("https://scrapeninja.apiroad.net/scrape", json=p, headers=h, timeout=20)
-            if r.status_code == 200:
-                return r.json().get('body', '')
-            elif r.status_code in [401, 402, 403, 429]:
-                log_debug("⚠️ ScrapeNinja OFF. Skok...")
-                NINJA_ALIVE = False
-        except: NINJA_ALIVE = False
-
-    # TARCZA 4: OloStep
     while OLO_INDEX < len(OLOSTEP_KEYS):
         token = OLOSTEP_KEYS[OLO_INDEX]
         try:
-            log_debug(f"🔄 Shield: OloStep Key {OLO_INDEX+1}...")
             h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-            r = requests.post("https://api.olostep.com/v1/scrapes", 
-                              json={"url_to_scrape": target_url}, headers=h, timeout=25)
-            if r.status_code == 200:
-                return r.json().get('default_snapshot', {}).get('content', '')
-            elif r.status_code in [401, 402, 429]:
-                log_debug(f"⚠️ OloStep {OLO_INDEX+1} wyczerpany. Skok...")
-                OLO_INDEX += 1
-            else:
-                OLO_INDEX += 1
+            r = requests.post("https://api.olostep.com/v1/scrapes", json={"url_to_scrape": target_url}, headers=h, timeout=25)
+            if r.status_code == 200: return r.json().get('default_snapshot', {}).get('content', '')
+            elif r.status_code in [401, 402, 429]: OLO_INDEX += 1
+            else: OLO_INDEX += 1
         except: OLO_INDEX += 1
 
-    # TARCZA 5: Stakewatch
     try:
-        log_debug("🔄 Shield: Stakewatch Backup...")
         r = requests.get(f"{STAKEWATCH_URL}{target_url}", timeout=25)
         if r.status_code == 200: return r.text
     except: pass
-    
     return None
 
 def scrape_olx(query):
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"}
+        headers = {"User-Agent": "Mozilla/5.0"}
         url = f"https://www.olx.pl/api/v1/offers/?query={query}&sort_by=created_at:desc&limit=20"
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
@@ -195,9 +164,9 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v19.10 | PRO SHIELD EDITION (Nocne Usypianie)")
+    log_debug("🚀 SNIPER v19.20 | FULL ARSENAL (DS/DSi INCLUDED)")
     QUERIES = [
-        "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", 
+        "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", 
         "gameboy advance", "gameboy color", "pokemon etb", 
         "pokemon booster box", "pokemon bundle", "first partner pack"
     ]
@@ -205,19 +174,14 @@ if __name__ == "__main__":
     last_reset_day = time.strftime("%d")
 
     while True:
-        # Reset tarcz codziennie
         if time.strftime("%d") != last_reset_day:
             OLO_INDEX = 0
             DOG_ALIVE = True
             ANT_ALIVE = True
-            NINJA_ALIVE = True
             last_reset_day = time.strftime("%d")
 
-        # Nowe usypianie na polski czas
         if is_night_time():
-            log_debug("🌙 Nocna pauza w Polsce (23:00 - 06:00). Śpię 30 min...")
-            time.sleep(1800)
-            continue
+            log_debug("🌙 Nocna pauza PL (23-06)..."); time.sleep(1800); continue
 
         random.shuffle(QUERIES)
         for q in QUERIES:
@@ -227,8 +191,7 @@ if __name__ == "__main__":
             time.sleep(random.randint(20, 35))
         
         if IS_FIRST_RUN:
-            log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)}). Snajper czuwa...")
+            log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)}).")
             IS_FIRST_RUN = False
         
-        log_debug("🔄 Cykl OK. Sleep 15min...")
         time.sleep(900)
