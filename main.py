@@ -65,7 +65,6 @@ def extract_vinted_items(html):
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
     
-    # Próba wyciągnięcia kafelków
     items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
     if not items:
         items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
@@ -85,7 +84,6 @@ def extract_vinted_items(html):
                     found.append({"title": title, "url": full_url, "price": price})
             except: continue
 
-    # Fallback dla linków bez kontenerów
     if not found:
         for a in soup.find_all("a", href=True):
             if "/items/" in a['href'] and "member" not in a['href']:
@@ -119,25 +117,39 @@ def scrape_vinted(query):
             )
             if r.status_code == 200:
                 html = r.json().get('default_snapshot', {}).get('content', '')
-                if "datadome" in html.lower():
-                    log_debug(f"⚠️ [Olo-{idx}] Blokada. Rotacja...")
+                if "datadome" in html.lower() or "challenge" in html.lower():
+                    log_debug(f"⚠️ [Olo-{idx}] Blokada Datadome (Rotacja).")
                 else:
                     items = extract_vinted_items(html)
                     if items:
-                        log_debug(f"✅ [Olo-{idx}] Vinted OK ({len(items)})")
+                        log_debug(f"✅ [Olo-{idx}] Vinted: Znalazłem {len(items)} ofert dla '{query}'")
                         for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
                         success = True; break
-                    elif "vinted" in html.lower():
-                        success = True; break # Pusta, ale nie ban
+                    else:
+                        if "vinted" in html.lower():
+                            log_debug(f"ℹ️ [Olo-{idx}] Vinted: Brak ofert (0) dla '{query}'")
+                        else:
+                            log_debug(f"🥷 [Olo-{idx}] Vinted: Pusta/Zepsuta strona dla '{query}'")
+                        success = True; break
+            else:
+                log_debug(f"❌ [Olo-{idx}] Błąd HTTP {r.status_code}")
+                
             OLO_INDEX += 1
-        except: OLO_INDEX += 1
+        except Exception as e: 
+            log_debug(f"❌ [Olo-{idx}] Błąd połączenia.")
+            OLO_INDEX += 1
 
     if not success:
+        log_debug(f"🐕 [Dog-Free] Próba awaryjna dla '{query}'...")
         try:
             r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
             if r.status_code == 200:
                 items = extract_vinted_items(r.text)
-                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                if items:
+                    log_debug(f"✅ [Dog-Free] Vinted: Znalazłem {len(items)} ofert dla '{query}'")
+                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                else:
+                    log_debug(f"ℹ️ [Dog-Free] Brak ofert dla '{query}'")
         except: pass
 
 def scrape_olx(query):
@@ -161,16 +173,28 @@ def process_item(title, url, price, src):
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-            log_debug(f"🎯 WYSŁANO: {title[:15]}")
+            log_debug(f"🎯 WYSŁANO: {title[:20]} ({price} zł)")
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v30.0 | FINAL CORE")
+    log_debug("🚀 SNIPER v31.0 | THE NIGHT WATCH")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
+    
     while True:
+        # PRZERWA NOCNA (01:00 - 05:59)
+        current_hour = time.localtime().tm_hour
+        if 1 <= current_hour < 6:
+            log_debug("🌙 Przerwa nocna. Bot idzie spać na 30 minut...")
+            time.sleep(1800) # 30 minut pauzy
+            continue
+
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q); time.sleep(5)
             scrape_vinted(q); time.sleep(15)
-        if IS_FIRST_RUN: log_debug("✅ Baza gotowa."); IS_FIRST_RUN = False
+            
+        if IS_FIRST_RUN: 
+            log_debug("✅ Baza początkowa gotowa."); IS_FIRST_RUN = False
+            
+        log_debug(f"💤 Koniec pętli. Przerwa 400s. Obecny klucz Olo: {OLO_INDEX % len(OLOSTEP_KEYS)}")
         time.sleep(400)
