@@ -84,7 +84,7 @@ def is_interesting_item(title, price):
         "FIRST_PARTNER": 120
     }
     
-    if 65 < price <= limits.get(cat, 999): 
+    if 49 < price <= limits.get(cat, 999): 
         return True, cat
     return False, "PRICE"
 
