@@ -63,6 +63,7 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CAT"
     
+    # CENY NIEZMIENIONE
     limits = {"PSP": 250, "VITA": 650, "3DS": 500, "2DS": 350, "DS_OLD": 160, "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 750, "TCG_BUNDLE": 160, "FIRST_PARTNER": 120}
     if 49 < price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
@@ -71,22 +72,37 @@ def extract_vinted_items(html):
     found = []
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
-    for a in soup.find_all("a", href=True):
-        href = a['href']
-        if "/items/" not in href or "member" in href: continue
-        txt = a.get_text(separator=" ")
-        if "zł" not in txt:
-            parent = a.find_parent("div")
-            txt = parent.get_text(separator=" ") if parent else ""
-        p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
-        if p_match:
-            try:
+    
+    # 1. Próba znalezienia ogłoszeń po kontenerach grid
+    grid_items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
+    
+    for item in grid_items:
+        try:
+            link = item.find("a", href=True)
+            if not link or "/items/" not in link['href']: continue
+            price_text = item.get_text(separator=" ")
+            p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", price_text)
+            if p_match:
                 price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                title = a.get("title") or "Vinted Item"
-                full_url = href if "vinted.pl" in href else f"https://www.vinted.pl{href}"
-                if not any(f['url'] == full_url for f in found):
-                    found.append({"title": title, "url": full_url, "price": price})
-            except: continue
+                url = link['href']
+                full_url = url if "vinted.pl" in url else f"https://www.vinted.pl{url}"
+                title = link.get("title") or "Vinted Item"
+                found.append({"title": title, "url": full_url, "price": price})
+        except: continue
+
+    # 2. Jeśli grid zawiódł - szukanie brutalne (wszystkie linki /items/ z ceną obok)
+    if not found:
+        for a in soup.find_all("a", href=True):
+            if "/items/" in a['href']:
+                # Szukamy ceny w tekście linku lub w rodzeństwie linku
+                txt = a.get_text(separator=" ")
+                p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
+                if p_match:
+                    try:
+                        price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
+                        u = a['href']
+                        found.append({"title": "Item", "url": u if "vinted.pl" in u else f"https://www.vinted.pl{u}", "price": price})
+                    except: continue
     return found
 
 def scrape_vinted(query):
@@ -94,8 +110,8 @@ def scrape_vinted(query):
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
-    # Próbujemy maksymalnie 2 razy różnymi kluczami OloStep
-    for attempt in range(2):
+    # PRÓBA OLOSTEP
+    for _ in range(2):
         idx = OLO_INDEX % len(OLOSTEP_KEYS)
         try:
             r = requests.post(
@@ -106,46 +122,38 @@ def scrape_vinted(query):
             )
             if r.status_code == 200:
                 html = r.json().get('default_snapshot', {}).get('content', '')
-                
-                if "datadome" in html.lower() or "challenge" in html.lower() or "captcha" in html.lower() or "access denied" in html.lower():
-                    log_debug(f"⚠️ [Olo-{idx}] Twardy Ban (Datadome). Zmieniam klucz...")
-                    OLO_INDEX += 1
-                    continue
+                if "vinted" not in html.lower() or "datadome" in html.lower():
+                    log_debug(f"⚠️ [Olo-{idx}] Blokada/Pusta strona. Rotacja...")
+                    OLO_INDEX += 1; continue
                 
                 items = extract_vinted_items(html)
                 if items:
-                    log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) dla: {query}")
-                    for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
+                    log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) | {query}")
+                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
                     return
                 else:
-                    # KLUCZOWA ZMIANA PARANOIKA: Brak wyników = Cichy Ban lub pusta strona bez JS
-                    log_debug(f"🥷 [Olo-{idx}] Cichy Ban / Pusty Render dla: {query}. Zmieniam klucz...")
-                    OLO_INDEX += 1
-                    continue
-            else:
-                log_debug(f"❌ [Olo-{idx}] Błąd {r.status_code}. Zmieniam klucz...")
-                OLO_INDEX += 1
+                    log_debug(f"🥷 [Olo-{idx}] Cichy ban dla: {query}. Zmieniam...")
+                    OLO_INDEX += 1; continue
         except:
-            log_debug(f"⚠️ [Olo-{idx}] Timeout. Zmieniam klucz...")
             OLO_INDEX += 1
 
-    # AWARYJNY PIES (SCRAPINGDOG) - Odpali się tylko gdy OloStep wyrzuci z siebie 2 "puste" strony z rzędu
+    # PRÓBA DARMOWEGO PSA (Uproszczona)
     try:
-        r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "true"}, timeout=20)
+        r = requests.get(
+            "https://api.scrapingdog.com/scrape", 
+            params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, 
+            timeout=20
+        )
         if r.status_code == 200:
-            html = r.text
-            if "datadome" not in html.lower():
-                items = extract_vinted_items(html)
-                if items:
-                    log_debug(f"✅ [Dog] OK ({len(items)}) dla: {query}")
-                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                else:
-                    log_debug(f"❌ [Dog] Też dostał cichego bana dla: {query}")
+            items = extract_vinted_items(r.text)
+            if items:
+                log_debug(f"✅ [Dog-Free] OK ({len(items)}) | {query}")
+                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
     except: pass
 
 def scrape_olx(query):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=20"
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200:
@@ -168,7 +176,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v24.0 | PARANOIA MODE")
+    log_debug("🚀 SNIPER v25.5 | FREE-STABLE")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     while True:
         if is_night_time():
@@ -176,9 +184,9 @@ if __name__ == "__main__":
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
-            time.sleep(5)
+            time.sleep(3)
             scrape_vinted(q)
-            time.sleep(15)
+            time.sleep(12)
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
         log_debug(f"💤 Przerwa 500s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
