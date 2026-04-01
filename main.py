@@ -1,4 +1,5 @@
 import requests
+from bs4 import BeautifulSoup
 import re, time, random, hashlib, os
 import urllib.parse
 
@@ -6,7 +7,7 @@ os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- KLUCZE OLOSTEP (Twoja Armia) ---
+# --- TWOJE KLUCZE OLOSTEP ---
 OLOSTEP_KEYS = [
     "olostep_koEUWUkQ7ue1e56xsJEmXBIwhFgNUWjvOT7U", "olostep_Jtz86lFTzVTyVnYr7Ci2LaMC0wnelqGB2kjJ",
     "olostep_HNb7ahynRXVg053o9YYSCuoIZIe5PCI3PYQp", "olostep_ilStdJ4wxfJm80DhrKYUo5x9oGh5bQ1ex3vJ",
@@ -65,68 +66,66 @@ def is_interesting_item(title, price):
     if 49 < price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
 
-def extract_vinted_from_markdown(text):
+def extract_vinted_items(html):
     found = []
-    if not text: return found
-    # Szukamy wzorców typu [Tytuł](link) oraz ceny obok
-    # Vinted w Markdown często daje: [Tytuł](/items/123...) ... 150,00 zł
-    items = re.findall(r'\[([^\]]+)\]\((/items/[^\)]+)\).*?(\d+[\d\s,.]*)\s?zł', text, re.DOTALL)
-    
-    for title, link, price_str in items:
-        try:
-            price = float(price_str.replace(",", ".").replace(" ", ""))
-            full_url = f"https://www.vinted.pl{link}"
-            if not any(f['url'] == full_url for f in found):
-                found.append({"title": title.strip(), "url": full_url, "price": price})
-        except: continue
+    if not html: return found
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = a['href']
+        if "/items/" not in href or "member" in href: continue
+        txt = a.get_text(separator=" ")
+        if "zł" not in txt:
+            parent = a.find_parent("div")
+            txt = parent.get_text(separator=" ") if parent else ""
+        p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
+        if p_match:
+            try:
+                price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
+                title = a.get("title") or a.find("img").get("alt", "") if a.find("img") else "Vinted Item"
+                full_url = href if "vinted.pl" in href else f"https://www.vinted.pl{href}"
+                if not any(f['url'] == full_url for f in found):
+                    found.append({"title": title, "url": full_url, "price": price})
+            except: continue
     return found
 
 def scrape_vinted(query):
     global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
-
     idx = OLO_INDEX % len(OLOSTEP_KEYS)
-    current_key = OLOSTEP_KEYS[idx]
     
     try:
-        h = {"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"}
+        h = {"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}", "Content-Type": "application/json"}
+        # KLUCZOWA ZMIANA: country PL i uproszczony payload
         payload = {
             "url_to_scrape": target_url,
-            "formats": ["markdown"],
             "country": "PL",
-            "wait_before_scraping": 5000
+            "wait_before_scraping": 3000
         }
-        r = requests.post("https://api.olostep.com/v1/scrapes", json=payload, headers=h, timeout=60)
+        r = requests.post("https://api.olostep.com/v1/scrapes", json=payload, headers=h, timeout=50)
         
         if r.status_code == 200:
-            data = r.json()
-            markdown = data.get('markdown_content', '')
-            
-            # Sprawdzenie blokady w tekście
-            if any(x in markdown.lower() for x in ["datadome", "captcha", "robot check"]):
-                log_debug(f"⚠️ [Olo-{idx}] Blokada Datadome. Rotacja...")
+            html = r.json().get('default_snapshot', {}).get('content', '')
+            if any(x in html.lower() for x in ["datadome", "captcha", "robot check"]):
+                log_debug(f"⚠️ [Olo-{idx}] Ban Datadome. Rotacja...")
                 OLO_INDEX += 1
                 return
-
-            items = extract_vinted_from_markdown(markdown)
+            items = extract_vinted_items(html)
             if items:
                 log_debug(f"✅ [Olo-{idx}] Trafił {len(items)} dla: {query}")
                 for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
             else:
-                log_debug(f"ℹ️ [Olo-{idx}] Brak nowych ofert dla: {query}")
+                log_debug(f"ℹ️ [Olo-{idx}] Brak ofert (Vinted Puste) dla: {query}")
         else:
-            log_debug(f"❌ [Olo-{idx}] Błąd API {r.status_code}. Zmieniam klucz...")
+            log_debug(f"❌ [Olo-{idx}] Błąd {r.status_code}. Zmieniam klucz...")
             OLO_INDEX += 1
-    except Exception as e:
-        log_debug(f"❌ [Olo-{idx}] Błąd połączenia. Zmieniam klucz...")
+    except:
         OLO_INDEX += 1
 
 def scrape_olx(query):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        q_enc = urllib.parse.quote_plus(query)
-        url = f"https://www.olx.pl/api/v1/offers/?query={q_enc}&sort_by=created_at:desc&limit=20"
+        url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=20"
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200:
             for o in r.json().get('data', []):
@@ -139,7 +138,6 @@ def process_item(title, url, price, src):
     clean_url = url.split("?")[0].rstrip("/")
     h = hashlib.md5(f"{title[:30]}_{int(price)}".encode()).hexdigest()
     if h in SENT_HASHES or clean_url in SENT_HASHES: return
-    
     valid, res = is_interesting_item(title, price)
     if valid:
         if not IS_FIRST_RUN:
@@ -149,24 +147,19 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v22.0 | STEALTH MARKDOWN MODE")
+    log_debug("🚀 SNIPER v22.5 | OLO-POLAND-TARAN")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
-    
     while True:
         if is_night_time():
             log_debug("🌙 Nocna pauza..."); time.sleep(1800); continue
-        
         if time.strftime("%H:%M") == "06:00": OLO_INDEX = 0
-
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
             time.sleep(random.randint(5, 10))
             scrape_vinted(q)
             time.sleep(random.randint(20, 35))
-        
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
-        
         log_debug(f"💤 Przerwa 600s. Olo Index: {OLO_INDEX % len(OLOSTEP_KEYS)}")
         time.sleep(600)
