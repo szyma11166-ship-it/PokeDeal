@@ -69,7 +69,7 @@ def is_interesting_item(title, price):
 
     if not cat: return False, "NO_CAT"
     
-    limits = {"PSP": 280, "VITA": 650, "3DS": 500, "2DS": 450, "DS_OLD": 150, "RETRO": 300, "TCG_ETB": 350, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 120}
+    limits = {"PSP": 250, "VITA": 650, "3DS": 500, "2DS": 350, "DS_OLD": 150, "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 120}
     if 49 < price <= limits.get(cat, 999): return True, cat
     return False, "PRICE"
 
@@ -77,27 +77,44 @@ def extract_vinted_items(html):
     if not html: return []
     soup = BeautifulSoup(html, "html.parser")
     found = []
-    cards = soup.find_all("div", {"data-testid": re.compile(r"grid-item|product-item")})
-    if not cards: cards = soup.find_all("div", class_=re.compile(r"feed-grid__item|item-card"))
     
-    for card in cards[:15]:
-        txt = card.get_text(separator=" ").lower()
+    # ULTIMATE PARSER: Szukamy bezpośrednio linków do przedmiotów, ignorując nazwy klas
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag['href']
+        if "/items/" not in href: continue
+        if "member" in href or "catalog" in href: continue # pomijamy linki do użytkowników
+        
+        # Bierzemy kontener rodzica, w którym zazwyczaj jest też cena
+        parent_card = a_tag.find_parent("div", class_=re.compile(r"item|box|card|container", re.I))
+        if not parent_card: parent_card = a_tag.parent.parent.parent # awaryjne wyjście
+        
+        if not parent_card: continue
+        
+        txt = parent_card.get_text(separator=" ").lower()
         if any(x in txt for x in ["dni temu", "vakar", "days ago"]): continue
-        link = card.find("a", href=True)
+        
         p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
-        if link and p_match:
+        if p_match:
             price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-            full_url = link['href'] if "vinted.pl" in link['href'] else f"https://www.vinted.pl{link['href']}"
-            found.append({"title": link.get("title", "") or "Vinted Item", "url": full_url, "price": price})
-    return found
+            full_url = href if "vinted.pl" in href else f"https://www.vinted.pl{href}"
+            
+            # Próba wyciągnięcia ładnego tytułu z atrybutu title lub ze zdjęcia
+            title = a_tag.get("title")
+            if not title:
+                img = a_tag.find("img")
+                if img and img.get("alt"): title = img.get("alt")
+            if not title: title = "Vinted Item"
+            
+            # Zabezpieczenie przed dublami na jednej stronie
+            if not any(f['url'] == full_url for f in found):
+                found.append({"title": title, "url": full_url, "price": price})
+                
+    return found[:15]
 
 def scrape_vinted_with_retries(query):
     global OLO_INDEX
-    
-    # NAPRAWA BŁĘDU: Profesjonalne kodowanie spacji i znaków
     q_encoded = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_encoded}&order=newest_first&currency=PLN"
-    
     last_html_title = ""
 
     # 1. ScrapingDog
@@ -106,6 +123,7 @@ def scrape_vinted_with_retries(query):
         last_html_title = get_html_title(r.text) if r.text else "Brak odpowiedzi"
         items = extract_vinted_items(r.text) if r.status_code == 200 and not is_blocked_html(r.text) else []
         if items: 
+            log_debug(f"✅ Vinted (Dog) trafił: {len(items)} ofert dla {query}")
             for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
             return
     except: pass
@@ -116,6 +134,7 @@ def scrape_vinted_with_retries(query):
         if not items and r.text: last_html_title = get_html_title(r.text)
         items = extract_vinted_items(r.text) if r.status_code == 200 and not is_blocked_html(r.text) else []
         if items: 
+            log_debug(f"✅ Vinted (Ant) trafił: {len(items)} ofert dla {query}")
             for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
             return
     except: pass
@@ -131,12 +150,12 @@ def scrape_vinted_with_retries(query):
                 if html: last_html_title = get_html_title(html)
                 items = extract_vinted_items(html) if not is_blocked_html(html) else []
                 if items:
+                    log_debug(f"✅ Vinted (OloStep) trafił: {len(items)} ofert dla {query}")
                     for item in items: process_item(item['title'], item['url'], item['price'], "VINTED")
                     return
             OLO_INDEX += 1
         except: OLO_INDEX += 1
     
-    # RENTGEN W LOGU
     log_debug(f"❌ Vinted PUSTE dla: {query} | Zwrócony tytuł strony: '{last_html_title[:40]}'")
 
 def scrape_olx(query):
@@ -166,7 +185,7 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v19.70 | URL FIX & X-RAY DEBUG")
+    log_debug("🚀 SNIPER v19.80 | ULTIMATE PARSER - DATADOME BYPASSED")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     
     while True:
@@ -185,4 +204,4 @@ if __name__ == "__main__":
         if IS_FIRST_RUN:
             log_debug(f"✅ Baza gotowa ({len(SENT_HASHES)})."); IS_FIRST_RUN = False
         
-        time.sleep(700)
+        time.sleep(750)
