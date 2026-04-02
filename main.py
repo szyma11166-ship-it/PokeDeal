@@ -161,7 +161,7 @@ def is_interesting_item(title, price):
     t_f = title.lower()
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci",
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka",
-             "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat",
+             "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat", "r4i",
              "obudowa"]
     if any(x in t_f for x in trash): return False, "TRASH"
 
