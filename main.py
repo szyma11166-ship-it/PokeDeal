@@ -14,45 +14,65 @@ CHAT_ID = "-1003743099672"
 
 SENT_HASHES = set()
 IS_FIRST_RUN = True
+VINTED_SESSION_DEAD = False
 
+# --- SESJE ---
 VINTED_SESSION = requests.Session()
 VINTED_SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
     "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "pl-PL,pl;q=0.9",
+    "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
     "Referer": "https://www.vinted.pl/",
     "X-Requested-With": "XMLHttpRequest",
 })
 VINTED_SESSION.cookies.set("_vinted_fr_session", VINTED_SESSION_COOKIE, domain=".vinted.pl")
 
+OLX_SESSION = requests.Session()
+OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+
 ALLEGRO_SESSION = requests.Session()
 ALLEGRO_SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "pl-PL,pl;q=0.9",
 })
-
-OLX_SESSION = requests.Session()
-OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
-# --- SCRAPING VINTED (wewnętrzne API) ---
+def send_telegram(msg):
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+            timeout=10
+        )
+    except: pass
+
+# --- VINTED ---
 def scrape_vinted(query):
+    global VINTED_SESSION_DEAD
+    if VINTED_SESSION_DEAD:
+        return
+
     q_enc = urllib.parse.quote_plus(query)
     url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={q_enc}&order=newest_first&per_page=30"
     try:
         r = VINTED_SESSION.get(url, timeout=20)
         if r.status_code == 401:
-            log_debug("🔄 Sesja Vinted wygasła — zaktualizuj VINTED_SESSION_COOKIE")
-            requests.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                data={"chat_id": CHAT_ID, "text": "⚠️ *SNIPER* — Sesja Vinted wygasła!\nPodmień token w kodzie (_vinted\\_fr\\_session_ z ciasteczek przeglądarki).", "parse_mode": "Markdown"}
-            )
+            log_debug("🔄 Sesja Vinted wygasła!")
+            VINTED_SESSION_DEAD = True
+            send_telegram("⚠️ *SNIPER* — Sesja Vinted wygasła\\!\nPodmień token `_vinted_fr_session` z ciasteczek przeglądarki\\.")
+            return
+        if r.status_code == 403:
+            log_debug("⛔ Vinted 403 — zły token lub blokada IP")
             return
         if r.status_code == 200:
-            data = r.json()
+            try:
+                data = r.json()
+            except:
+                log_debug("⚠️ Vinted — odpowiedź nie jest JSON")
+                return
             items = data.get("items", [])
             new_count = 0
             for item in items:
@@ -69,7 +89,7 @@ def scrape_vinted(query):
     except Exception as e:
         log_debug(f"💥 Błąd Vinted: {e}")
 
-# --- SCRAPING OLX ---
+# --- OLX ---
 def scrape_olx(query):
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=20"
@@ -85,31 +105,52 @@ def scrape_olx(query):
     except Exception as e:
         log_debug(f"💥 Błąd OLX: {e}")
 
-# --- SCRAPING ALLEGRO LOKALNIE ---
+# --- ALLEGRO LOKALNIE (HTML scraping) ---
 def scrape_allegro_lokalnie(query):
     try:
         q_enc = urllib.parse.quote_plus(query)
-        url = f"https://allegrolokalnie.pl/api/v1/items?phrase={q_enc}&sort=-created_at&limit=30"
-        r = ALLEGRO_SESSION.get(url, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            items = data.get("items", data.get("data", []))
-            new_count = 0
-            for item in items:
-                title = item.get("name") or item.get("title", "")
-                price_raw = item.get("price") or item.get("selling_price", {})
-                if isinstance(price_raw, dict):
-                    price = float(price_raw.get("amount", 0))
-                else:
-                    price = float(price_raw or 0)
-                slug = item.get("slug") or item.get("id", "")
-                item_url = f"https://allegrolokalnie.pl/oferta/{slug}"
-                if title and price:
-                    if process_item(title, item_url, price, "ALLEGRO"):
-                        new_count += 1
-            log_debug(f"✅ Allegro Lokalnie [{query}]: nowych {new_count}")
-        else:
+        url = f"https://allegrolokalnie.pl/oferty?phrase={q_enc}&sort=createdAt-desc"
+        r = ALLEGRO_SESSION.get(url, timeout=20)
+        if r.status_code != 200:
             log_debug(f"⚠️ Allegro Lokalnie status: {r.status_code}")
+            return
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        new_count = 0
+        items = soup.select("article[data-testid='listing-ad'], div[class*='mlc-itemcard'], article[class*='offer-card']")
+
+        if not items:
+            # Próba alternatywnego selektora
+            items = soup.select("a[href*='/oferta/']")
+
+        for item in items:
+            try:
+                # Pobierz link
+                link = item if item.name == 'a' else item.find("a", href=lambda h: h and "/oferta/" in h)
+                if not link:
+                    continue
+                item_url = link.get("href", "")
+                if not item_url.startswith("http"):
+                    item_url = f"https://allegrolokalnie.pl{item_url}"
+
+                # Pobierz tytuł
+                title_el = item.find(["h2", "h3", "span"], class_=re.compile(r"title|name|heading", re.I))
+                title = title_el.get_text(strip=True) if title_el else item.get_text(separator=" ")[:60]
+
+                # Pobierz cenę
+                price_text = item.get_text(separator=" ")
+                price_match = re.search(r"(\d[\d\s]*(?:[,\.]\d{1,2})?)\s*zł", price_text)
+                if not price_match:
+                    continue
+                price = float(price_match.group(1).replace(" ", "").replace(",", "."))
+
+                if title and price:
+                    if process_item(title.strip(), item_url, price, "ALLEGRO"):
+                        new_count += 1
+            except:
+                continue
+
+        log_debug(f"✅ Allegro Lokalnie [{query}]: nowych {new_count}")
     except Exception as e:
         log_debug(f"💥 Błąd Allegro Lokalnie: {e}")
 
@@ -118,7 +159,7 @@ def is_interesting_item(title, price):
     t_f = title.lower()
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci",
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka",
-             "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat"]
+             "adapter", "obudowa", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat"]
     if any(x in t_f for x in trash): return False, "TRASH"
 
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
@@ -150,7 +191,7 @@ def is_interesting_item(title, price):
     if 45 < price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
 
-# --- WYSYŁKA TELEGRAM ---
+# --- WYSYŁKA ---
 def process_item(title, url, price, src):
     global IS_FIRST_RUN
     clean_url = url.split("?")[0].rstrip("/")
@@ -161,10 +202,7 @@ def process_item(title, url, price, src):
     if valid:
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
-            requests.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
-            )
+            send_telegram(msg)
             log_debug(f"🎯 WYSŁANO: {title[:25]} ({price} zł)")
         SENT_HASHES.add(h)
         SENT_HASHES.add(clean_url)
@@ -173,7 +211,7 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v39.1 | VINTED COOKIE + ALLEGRO LOKALNIE")
+    log_debug("🚀 SNIPER v39.2 | OLX + VINTED COOKIE + ALLEGRO LOKALNIE HTML")
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
@@ -193,10 +231,10 @@ if __name__ == "__main__":
             scrape_vinted(q)
             time.sleep(3)
             scrape_allegro_lokalnie(q)
-            time.sleep(5)
+            time.sleep(random.randint(4, 8))
 
         if IS_FIRST_RUN:
             IS_FIRST_RUN = False
 
         log_debug("💤 Koniec pętli. Przerwa 300s.")
-        time.sleep(30)
+        time.sleep(300)
