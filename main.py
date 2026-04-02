@@ -7,7 +7,7 @@ os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- TWOJE KLUCZE (WYMIEŃ JE, BO DOSTAJĄ 402) ---
+# --- TWOJE KLUCZE (29 SZTUK) ---
 OLOSTEP_KEYS = [
     "olostep_koEUWUkQ7ue1e56xsJEmXBIwhFgNUWjvOT7U", "olostep_Jtz86lFTzVTyVnYr7Ci2LaMC0wnelqGB2kjJ",
     "olostep_HNb7ahynRXVg053o9YYSCuoIZIe5PCI3PYQp", "olostep_ilStdJ4wxfJm80DhrKYUo5x9oGh5bQ1ex3vJ",
@@ -33,15 +33,9 @@ CHAT_ID = "-1003743099672"
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 OLO_INDEX = 0
-ALERT_SENT = False
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
-
-def send_telegram_msg(msg):
-    try:
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-    except: pass
 
 def is_interesting_item(title, price):
     t_f = title.lower()
@@ -70,15 +64,11 @@ def extract_vinted_items(html):
     found = []
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
-    
     items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
-    if not items:
-        items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
-        
+    if not items: items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
     for item in items:
         link = item.find("a", href=True)
         if not link or "/items/" not in link['href']: continue
-        
         price_texts = re.findall(r"(\d+[\d\s,.]*)\s?zł", item.get_text(separator=" "))
         if price_texts:
             try:
@@ -89,87 +79,59 @@ def extract_vinted_items(html):
                 if not any(f['url'] == full_url for f in found):
                     found.append({"title": title, "url": full_url, "price": price})
             except: continue
-
-    if not found:
-        for a in soup.find_all("a", href=True):
-            if "/items/" in a['href'] and "member" not in a['href']:
-                parent = a.parent.parent if a.parent else None
-                txt = parent.get_text(separator=" ") if parent else a.get_text(separator=" ")
-                p_match = re.search(r"(\d+[\d\s,.]*)\s?zł", txt)
-                if p_match:
-                    try:
-                        price = float(p_match.group(1).replace(",", ".").replace(" ", ""))
-                        u = a['href']
-                        full_u = u if "vinted.pl" in u else f"https://www.vinted.pl{u}"
-                        if not any(f['url'] == full_u for f in found):
-                            found.append({"title": a.get("title", "Item"), "url": full_u, "price": price})
-                    except: continue
     return found
 
 def scrape_vinted(query):
-    global OLO_INDEX, ALERT_SENT
+    global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
-    
     success = False
-    
-    # Odpytanie OloStep (jeśli są klucze)
-    if OLOSTEP_KEYS:
-        for _ in range(2):
-            if not OLOSTEP_KEYS: break # Jeśli usunięto ostatni w trakcie pętli
-            idx = OLO_INDEX % len(OLOSTEP_KEYS)
-            try:
-                r = requests.post(
-                    "https://api.olostep.com/v1/scrapes", 
-                    json={"url_to_scrape": target_url, "render_js": False}, 
-                    headers={"Authorization": f"Bearer {OLOSTEP_KEYS[idx]}"}, 
-                    timeout=25
-                )
-                
-                if r.status_code == 200:
-                    html = r.json().get('default_snapshot', {}).get('content', '')
-                    if "datadome" in html.lower() or "challenge" in html.lower():
-                        log_debug(f"⚠️ [Olo] Blokada Datadome.")
-                    else:
-                        items = extract_vinted_items(html)
-                        if items:
-                            log_debug(f"✅ [Olo] Vinted: Znalazłem {len(items)} ofert dla '{query}'")
-                            for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                            success = True; break
-                        else:
-                            success = True; break
-                elif r.status_code == 402:
-                    log_debug(f"💀 Błąd 402! Klucz {OLOSTEP_KEYS[idx][:15]}... pusty. Usuwam go.")
-                    OLOSTEP_KEYS.pop(idx)
-                    continue # Od razu próbujemy następny
+
+    for attempt in range(2):
+        idx = OLO_INDEX % len(OLOSTEP_KEYS)
+        key = OLOSTEP_KEYS[idx]
+        # W drugiej próbie wymuszamy JS, żeby sprawdzić czy to coś zmieni
+        use_js = (attempt == 1)
+        
+        try:
+            r = requests.post(
+                "https://api.olostep.com/v1/scrapes", 
+                json={"url_to_scrape": target_url, "render_js": use_js}, 
+                headers={"Authorization": f"Bearer {key}"}, 
+                timeout=25
+            )
+            
+            if r.status_code == 200:
+                html = r.json().get('default_snapshot', {}).get('content', '')
+                if "datadome" in html.lower():
+                    log_debug(f"⚠️ [Olo-{idx}] Datadome detect.")
                 else:
-                    log_debug(f"❌ [Olo] Błąd HTTP {r.status_code}")
-                    
-                OLO_INDEX += 1
-            except Exception as e: 
-                log_debug(f"❌ [Olo] Błąd połączenia.")
-                OLO_INDEX += 1
+                    items = extract_vinted_items(html)
+                    if items:
+                        log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) | JS: {use_js}")
+                        for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                        success = True; break
+                    else:
+                        log_debug(f"ℹ️ [Olo-{idx}] Brak ofert | JS: {use_js}")
+                        success = True; break
+            elif r.status_code == 402:
+                # DIAGNOSTYKA BŁĘDU 402
+                error_msg = r.json().get('message', 'No message')
+                log_debug(f"🛑 [DIAGNOZA-402] Klucz {idx} ({key[-4:]}): {error_msg}")
+            else:
+                log_debug(f"❌ [Olo-{idx}] HTTP {r.status_code}")
+                
+            OLO_INDEX += 1
+        except Exception as e:
+            log_debug(f"❌ [Olo-{idx}] Błąd: {str(e)}")
+            OLO_INDEX += 1
 
-    # Sprawdzenie, czy klucze się nie skończyły
-    if not OLOSTEP_KEYS and not ALERT_SENT:
-        send_telegram_msg("⚠️ *UWAGA!* Wszystkie klucze OloStep (29/29) zwróciły błąd 402 (brak limitu). Vinted jedzie teraz tylko na awaryjnym ScrapingDogu. Wygeneruj nowe klucze!")
-        ALERT_SENT = True
-
-    # ScrapingDog (Awaryjnie lub gdy brak kluczy Olo)
     if not success:
-        log_debug(f"🐕 [Dog] Szukam '{query}'...")
         try:
             r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
             if r.status_code == 200:
                 items = extract_vinted_items(r.text)
-                if items:
-                    log_debug(f"✅ [Dog] Znalazłem {len(items)} ofert.")
-                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                else:
-                    if "datadome" in r.text.lower():
-                        log_debug(f"❌ [Dog] Dostał Datadome / Captchę od Vinted.")
-                    else:
-                        log_debug(f"ℹ️ [Dog] Strona pobrana, ale 0 ofert.")
+                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
         except: pass
 
 def scrape_olx(query):
@@ -192,30 +154,23 @@ def process_item(title, url, price, src):
     if valid:
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
-            send_telegram_msg(msg)
-            log_debug(f"🎯 WYSŁANO: {title[:20]} ({price} zł)")
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+            log_debug(f"🎯 WYSŁANO: {title[:15]}")
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v32.0 | THE PURGE")
+    log_debug("🚀 SNIPER v33.0 | THE DETECTIVE")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
-    
     while True:
-        # PRZERWA NOCNA (01:00 - 05:59)
         current_hour = time.localtime().tm_hour
         if 1 <= current_hour < 6:
-            log_debug("🌙 Przerwa nocna. Bot idzie spać na 30 minut...")
-            time.sleep(1800)
-            continue
+            log_debug("🌙 Nocna pauza..."); time.sleep(1800); continue
 
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q); time.sleep(5)
             scrape_vinted(q); time.sleep(15)
             
-        if IS_FIRST_RUN: 
-            log_debug("✅ Baza początkowa gotowa."); IS_FIRST_RUN = False
-            
-        keys_left = len(OLOSTEP_KEYS)
-        log_debug(f"💤 Koniec pętli. Przerwa 400s. Aktywnych kluczy Olo: {keys_left}")
+        if IS_FIRST_RUN: log_debug("✅ Baza gotowa."); IS_FIRST_RUN = False
+        log_debug(f"💤 Przerwa 400s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
         time.sleep(400)
