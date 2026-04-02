@@ -117,43 +117,55 @@ def scrape_vinted(query):
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
-    # --- 1. ScraperAPI (z rotacją kluczy) ---
+    # --- 1. ScraperAPI ---
     if not SCRAPER_DEAD:
         try:
             current_key = SCRAPER_KEYS[CURRENT_KEY_IDX]
             log_debug(f"🔍 [ScraperAPI] Szukam: {query} (Klucz {CURRENT_KEY_IDX+1})...")
+            # Dodajemy render=false (oszczędność), ale z renderowaniem czasem lepiej idzie. Zostawmy bez na razie.
             r = requests.get('https://api.scraperapi.com/', params={'api_key': current_key, 'url': target_url}, timeout=25)
             
             if r.status_code == 200:
+                if "datadome" in r.text.lower() or "captcha" in r.text.lower():
+                    log_debug(f"⚠️ [ScraperAPI] Blokada Datadome na kluczu {CURRENT_KEY_IDX+1}. Przeskakuję...")
+                    # Nie marnujemy mrówek, idziemy do następnej frazy
+                    return 
+
                 items = extract_vinted_items(r.text)
                 if items:
                     log_debug(f"✅ [ScraperAPI] Znalazłem {len(items)} ofert.")
                     for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                    return
+                    return # Sukces - kończymy funkcję, nie odpalamy Anta!
+                else:
+                    log_debug(f"❓ [ScraperAPI] Brak ofert w odpowiedzi (pusta strona?).")
+                    # Tutaj opcjonalnie: return (żeby nie marnować Anta) lub kontynuuj do Anta.
+                    # Zostawiam return, żeby oszczędzać kredyty ScrapingAnt.
+                    return 
+
             elif r.status_code in [403, 429]:
-                log_debug(f"❌ Klucz {CURRENT_KEY_IDX+1} wyczerpany (Błąd {r.status_code}).")
+                log_debug(f"❌ Klucz {CURRENT_KEY_IDX+1} wyczerpany.")
                 CURRENT_KEY_IDX += 1
                 if CURRENT_KEY_IDX >= len(SCRAPER_KEYS):
                     SCRAPER_DEAD = True
-                    send_telegram_alert("⚠️ *ALERT: ScraperAPI wyczerpany!* ⚠️\nOstatni klucz padł. Bot używa teraz tylko ScrapingAnt.")
-                else:
-                    # Spróbuj ponownie z nowym kluczem od razu
-                    scrape_vinted(query)
-                    return
+                    send_telegram_alert("⚠️ *ALERT: ScraperAPI wyczerpany!*")
+                return # Idziemy do Anta dopiero w następnym wywołaniu lub po błędzie
+        except Exception as e:
+            log_debug(f"💥 Błąd ScraperAPI: {e}")
+
+    # --- 2. ScrapingAnt (Tylko jeśli ScraperAPI jest martwy lub rzucił błąd) ---
+    if SCRAPER_DEAD:
+        try:
+            log_debug(f"🐜 [ScrapingAnt] Szukam: {query}...")
+            # ScrapingAnt jest droższy, używamy go tylko jak ScraperAPI leży
+            ant_url = f"https://api.scrapingant.com/v2/general?url={urllib.parse.quote(target_url)}&x-api-key={SCRAPING_ANT_KEY}&browser=false"
+            r = requests.get(ant_url, timeout=25)
+            if r.status_code == 200:
+                items = extract_vinted_items(r.text)
+                if items:
+                    log_debug(f"✅ [ScrapingAnt] Znalazłem {len(items)} ofert.")
+                    for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
         except: pass
 
-    # --- 2. ScrapingAnt (Awaryjnie) ---
-    try:
-        log_debug(f"🐜 [ScrapingAnt] Szukam: {query}...")
-        ant_url = f"https://api.scrapingant.com/v2/general?url={urllib.parse.quote(target_url)}&x-api-key={SCRAPING_ANT_KEY}"
-        r = requests.get(ant_url, timeout=25)
-        if r.status_code == 200:
-            items = extract_vinted_items(r.text)
-            if items:
-                log_debug(f"✅ [ScrapingAnt] Znalazłem {len(items)} ofert.")
-                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                return
-    except: pass
 
     # --- 3. ScrapingDog (Ostatnia deska ratunku) ---
     try:
