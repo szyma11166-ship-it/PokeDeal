@@ -3,12 +3,11 @@ from bs4 import BeautifulSoup
 import re, time, random, hashlib, os
 import urllib.parse
 
-# Ustawienie strefy czasowej
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- MAGAZYNEK KLUCZY ---
+# --- KONFIGURACJA API ---
 SCRAPER_KEYS = [
     "558dd7ae69a6b68bf43a2cf2cb11be37",
     "34fef74e3ced51e01bb8391a147e909e",
@@ -31,25 +30,25 @@ def log_debug(msg):
 
 def send_telegram_alert(msg):
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                      data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
     except: pass
 
 def is_interesting_item(title, price):
     t_f = title.lower()
     
-    # 1. ŚMIECI
+    # Śmieci
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci", 
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka", "adapter"]
     if any(x in t_f for x in trash): return False, "TRASH"
     
-    # 2. FILTR GIER (Z ochroną Gameboya/Konsol)
+    # Filtr gier (chronimy nazwy konsol)
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
-        # Sprawdzamy, czy to na pewno nie konsola
+        # Sprawdzamy czy to konsola (np. Gameboy, Gamegear, itd.)
         if not any(ok in t_f for ok in ["boy", "gear", "station", "cube", "watch", "advance", "color", "dsi", "vita", "konsola"]):
             return False, "SINGLE_GAME"
 
-    # 3. KATEGORYZACJA
+    # Kategorie
     cat = None
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f: cat = "FIRST_PARTNER"
@@ -67,7 +66,7 @@ def is_interesting_item(title, price):
     
     if not cat: return False, "NO_CAT"
     
-    # 4. TWOJE SZTYWNE CENY
+    # Limity cenowe (Nienaruszone)
     limits = {
         "PSP": 250, "VITA": 650, "3DS": 550, "2DS": 400, "DS_OLD": 150, 
         "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 150
@@ -80,10 +79,8 @@ def extract_vinted_items(html):
     found = []
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
-    # Vinted przy renderingu JS często zmienia klasy, szukamy szeroko
-    items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
-    if not items: items = soup.select('div[class*="feed-grid__item"]')
-    if not items: items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
+    # Bardziej agresywne szukanie w wyrenderowanym HTML
+    items = soup.select('div[data-testid*="grid-item"], div[class*="feed-grid__item"], div[class*="ItemBox"]')
     
     for item in items:
         link = item.find("a", href=True)
@@ -108,54 +105,59 @@ def scrape_vinted(query):
     if not SCRAPER_DEAD:
         try:
             current_key = SCRAPER_KEYS[CURRENT_KEY_IDX]
-            log_debug(f"🔍 [ScraperAPI] Szukam: {query} (Klucz {CURRENT_KEY_IDX+1} + RENDER)...")
+            log_debug(f"🔍 [ScraperAPI] {query} (Klucz {CURRENT_KEY_IDX+1})...")
             
-            # WŁĄCZAMY RENDER I COUNTRY_CODE
+            # Parametry Ultra-Stealth
             params = {
                 'api_key': current_key,
                 'url': target_url,
                 'render': 'true',
-                'country_code': 'pl'
+                'premium': 'true', # Wyższa jakość IP
+                'country_code': 'pl',
+                'device_type': 'mobile' # Vinted rzadziej blokuje mobile
             }
-            r = requests.get('https://api.scraperapi.com/', params=params, timeout=40)
+            # Zwiększony timeout do 60s
+            r = requests.get('https://api.scraperapi.com/', params=params, timeout=60)
             
             if r.status_code == 200:
-                if "datadome" in r.text.lower():
-                    log_debug("⚠️ Blokada Datadome mimo renderingu!")
+                if "datadome" in r.text.lower() or "cloudflare" in r.text.lower():
+                    log_debug("⚠️ Wykryto blokadę w HTML. Rotacja klucza...")
+                    CURRENT_KEY_IDX = (CURRENT_KEY_IDX + 1) % len(SCRAPER_KEYS)
                     return
 
                 items = extract_vinted_items(r.text)
                 if items:
-                    log_debug(f"✅ [ScraperAPI] Znalazłem {len(items)} ofert.")
+                    log_debug(f"✅ Znaleziono {len(items)} ofert.")
                     for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
                     return
                 else:
-                    log_debug("❓ Brak ofert w HTML (mimo statusu 200).")
+                    log_debug("❓ Pusta strona.")
             elif r.status_code in [403, 429]:
-                log_debug(f"❌ Klucz {CURRENT_KEY_IDX+1} pusty.")
+                log_debug(f"❌ Klucz {CURRENT_KEY_IDX+1} wyczerpany.")
                 CURRENT_KEY_IDX += 1
                 if CURRENT_KEY_IDX >= len(SCRAPER_KEYS):
                     SCRAPER_DEAD = True
-                    send_telegram_alert("🚨 *Klucze ScraperAPI wyczerpane!* Jedziemy na awaryjnym Ant.")
+                    send_telegram_alert("🚨 *Klucze ScraperAPI padły!*")
         except Exception as e:
-            log_debug(f"💥 Błąd: {e}")
+            log_debug(f"💥 Błąd (Timeout/Połączenie): {e}")
+            # Przy timeoutach nie zmieniamy klucza od razu, może to tylko chwilowy lag sieci
 
-    # AWARYJNY ANT (Tylko jak ScraperAPI padnie)
+    # Rezerwowy Ant
     if SCRAPER_DEAD:
         try:
-            log_debug(f"🐜 [ScrapingAnt] Szukam: {query}...")
-            ant_url = f"https://api.scrapingant.com/v2/general?url={urllib.parse.quote(target_url)}&x-api-key={SCRAPING_ANT_KEY}&browser=false"
-            r = requests.get(ant_url, timeout=30)
+            log_debug(f"🐜 [Ant] {query}...")
+            ant_url = f"https://api.scrapingant.com/v2/general?url={urllib.parse.quote(target_url)}&x-api-key={SCRAPING_ANT_KEY}&browser=true"
+            r = requests.get(ant_url, timeout=45)
             if r.status_code == 200:
                 items = extract_vinted_items(r.text)
                 if items:
-                    log_debug(f"✅ [ScrapingAnt] Znalazłem {len(items)} ofert.")
+                    log_debug(f"✅ [Ant] Znaleziono {len(items)} ofert.")
                     for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
         except: pass
 
 def scrape_olx(query):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"}
         url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=20"
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200:
@@ -180,25 +182,24 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v37.0 | RENDER MODE ON")
+    log_debug("🚀 SNIPER v38.0 | STEALTH MODE")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     
     while True:
         current_hour = time.localtime().tm_hour
         if 1 <= current_hour < 6:
-            log_debug("🌙 Przerwa nocna...")
             time.sleep(1800); continue
 
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
-            time.sleep(2)
+            time.sleep(3)
             scrape_vinted(q)
-            time.sleep(12) 
+            time.sleep(15) # Większy odstęp, żeby Vinted ochłonęło
             
         if IS_FIRST_RUN: 
-            log_debug("✅ Baza początkowa gotowa.")
+            log_debug("✅ Baza gotowa.")
             IS_FIRST_RUN = False
             
-        log_debug("💤 Koniec pętli. Przerwa 400s.")
+        log_debug("💤 Przerwa 400s.")
         time.sleep(400)
