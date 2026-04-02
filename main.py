@@ -7,7 +7,11 @@ os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'): time.tzset()
 
 # --- KONFIGURACJA ---
-VINTED_SESSION_COOKIE = "NXJXMGlaZzdzNHBoWS9mK2wvaTFadzlhWkVCTDZTeFdHWVBmOERsTlVHenFkNGZSdkkxc2NsOUZMb1l6Z1NMTzN2ZEtvd1dmRWtJMGJoVHY1VnIrK2ExcDhjZ3pVMFY0aTJ0ak5lQTFHQnZTbEJMcnRmNU9Yd3VWNVhlcHM0MDJTZVZNOFZZMDl6dHpsVlErekJNREMrYnNqZEFrN1ZGZGovK0loZC9ua0xFMjZwZ0tIcktSMFZpd1RGcUdnMmFOQTFoNExtR25HOEsxYVVONk43RHlnOWphdTVqMjZWTjl1UEJnM2V6Q0ZYb1YwTjNyWEYvTVBTRmFySVhqNlR0NzNiZFJlTjVTa3NURFhNU2pIS2ZiTXNXTU9RYjRVUFp3cGtoRmp0eFc3QkdxbUxKRFlIc0NZUzFFTWwrQVRNVGEtLVRkakNJQXFFL2Yya25nYnJhVFJkR0E9PQ%3D%3D--917e1a3ddee74b5539a8e5a2a3a001515af73c2f"
+# Wejdź na vinted.pl w przeglądarce → F12 → Application → Cookies
+# Skopiuj WSZYSTKIE poniższe ciasteczka które znajdziesz (resztę zostaw pustą)
+VINTED_SESSION_COOKIE = "KzhRZWJsV0Izek9ydzk1NFZkRHhlT3FTS3MyaUJpNm1wUisvSEVsYTdnSnJiZ0lvWGc0c0tKbFdTdmNQaW8zNkxEeGp1TWhZUjFuenlBNHpIYU9OQlc0clJDRHlINzJSbTZ3TW5sYVp2d2xPSUtBbGZjdS9ianRLaGxYaXBsTFVubHFDc1F5UjFMZ2FTWTlIVTZpb21sL2p0TXBUbkRySlI5ZWRsQUhGek1XaG1VRXNVM1YzYXJRaGRESkRyem9pckZQRm43Qi9jQW1IV0VVaGlxNFA4WVdzNG84aElBUFlyMERQUFFuRjdOc21IQldKUE5MdUdjM3ZydDlyVmUwQzY4bURZaTdsOTlVWVFsYjVxQkhBTTJGdW9PcE1rb0ZnbzFKOTFCUVhON1BXMnZEcDJGcEJBeS9KNTdDSG84QXItLU02VjhPQ296TXE4endyY1ByaW5XNmc9PQ%3D%3D--e33bf42a7064f2d01711d0f4423aee169ada990e"       # _vinted_fr_session  (wymagane)
+VINTED_ACCESS_TOKEN   = "eyJraWQiOiJFNTdZZHJ1SHBsQWp1MmNObzFEb3JIM2oyN0J1NS1zX09QNVB3UGlobjVNIiwiYWxnIjoiUFMyNTYifQ.eyJhY2NvdW50X2lkIjo3NjIwNjk5NSwiYXBwX2lkIjo0LCJhdWQiOiJmci5jb3JlLmFwaSIsImNsaWVudF9pZCI6IndlYiIsImV4cCI6MTc3NTE2NDY3MSwiaWF0IjoxNzc1MTU3NDcxLCJpc3MiOiJ2aW50ZWQtaWFtLXNlcnZpY2UiLCJsb2dpbl90eXBlIjozLCJwdXJwb3NlIjoiYWNjZXNzIiwic2NvcGUiOiJ1c2VyIiwic2lkIjoiYWNjYWM3NGItMTc3NTE1NzQ3MSIsInN1YiI6IjEwNjkzNDEyOSIsImNjIjoiUEwiLCJhbmlkIjoiOGUxMDRiMGUtNzg5OC00NmYwLWJiNDEtMjg0NmUzOWMyZWViIiwiYWN0Ijp7InN1YiI6IjEwNjkzNDEyOSJ9fQ.ei-kSKdxaSdLvU85fn2glbyU0iLjkXxjxzeU-CRYYfQwnTV1PMxOEcF6NQ9mrLH4viqI0WZnfVlhDTe-X82XTQgvGRjwrLoiRky1nz7GYj0c-dZOVvrI_Yf6_hj_ahXAvvyW-NVESLY4bt5FgIoKdDU4zUrdIoErGL5r_AEees_y7sVpR1cl06OmpM1Y00Fa6aB2WZO3HtOu3is3UetQatEQT1HFmnNKovcTi6SlDWkkU3MJDb4GH4LSopyQPKO80FtUzY7s25Oi7DPJs_8s0yx2KhwrmZigXL4kDr0QRUQaW7l6yF8Jyn4qc7MYXVuc3fOcQvFsVytihEg3oAMGfg"
+VINTED_ANON_ID        = "8e104b0e-7898-46f0-bb41-2846e39c2eeb"
 
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
@@ -19,13 +23,19 @@ VINTED_SESSION_DEAD = False
 # --- SESJE ---
 VINTED_SESSION = requests.Session()
 VINTED_SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
-    "Referer": "https://www.vinted.pl/",
+    "Referer": "https://www.vinted.pl/catalog",
+    "Origin": "https://www.vinted.pl",
     "X-Requested-With": "XMLHttpRequest",
 })
 VINTED_SESSION.cookies.set("_vinted_fr_session", VINTED_SESSION_COOKIE, domain=".vinted.pl")
+if VINTED_ACCESS_TOKEN:
+    VINTED_SESSION.cookies.set("access_token", VINTED_ACCESS_TOKEN, domain=".vinted.pl")
+    VINTED_SESSION.headers.update({"Authorization": f"Bearer {VINTED_ACCESS_TOKEN}"})
+if VINTED_ANON_ID:
+    VINTED_SESSION.cookies.set("anon_id", VINTED_ANON_ID, domain=".vinted.pl")
 
 OLX_SESSION = requests.Session()
 OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
@@ -59,13 +69,10 @@ def scrape_vinted(query):
     url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={q_enc}&order=newest_first&per_page=30"
     try:
         r = VINTED_SESSION.get(url, timeout=20)
-        if r.status_code == 401:
-            log_debug("🔄 Sesja Vinted wygasła!")
+        if r.status_code in [401, 403]:
+            log_debug(f"🔄 Vinted {r.status_code} — sesja nieważna")
             VINTED_SESSION_DEAD = True
-            send_telegram("⚠️ *SNIPER* — Sesja Vinted wygasła\\!\nPodmień token `_vinted_fr_session` z ciasteczek przeglądarki\\.")
-            return
-        if r.status_code == 403:
-            log_debug("⛔ Vinted 403 — zły token lub blokada IP")
+            send_telegram("⚠️ *SNIPER* — Sesja Vinted wygasła\\!\nPodmień `_vinted_fr_session` z ciasteczek przeglądarki\\.")
             return
         if r.status_code == 200:
             try:
@@ -105,7 +112,7 @@ def scrape_olx(query):
     except Exception as e:
         log_debug(f"💥 Błąd OLX: {e}")
 
-# --- ALLEGRO LOKALNIE (HTML scraping) ---
+# --- ALLEGRO LOKALNIE ---
 def scrape_allegro_lokalnie(query):
     try:
         q_enc = urllib.parse.quote_plus(query)
@@ -118,14 +125,11 @@ def scrape_allegro_lokalnie(query):
         soup = BeautifulSoup(r.text, "html.parser")
         new_count = 0
         items = soup.select("article[data-testid='listing-ad'], div[class*='mlc-itemcard'], article[class*='offer-card']")
-
         if not items:
-            # Próba alternatywnego selektora
             items = soup.select("a[href*='/oferta/']")
 
         for item in items:
             try:
-                # Pobierz link
                 link = item if item.name == 'a' else item.find("a", href=lambda h: h and "/oferta/" in h)
                 if not link:
                     continue
@@ -133,11 +137,9 @@ def scrape_allegro_lokalnie(query):
                 if not item_url.startswith("http"):
                     item_url = f"https://allegrolokalnie.pl{item_url}"
 
-                # Pobierz tytuł
                 title_el = item.find(["h2", "h3", "span"], class_=re.compile(r"title|name|heading", re.I))
                 title = title_el.get_text(strip=True) if title_el else item.get_text(separator=" ")[:60]
 
-                # Pobierz cenę
                 price_text = item.get_text(separator=" ")
                 price_match = re.search(r"(\d[\d\s]*(?:[,\.]\d{1,2})?)\s*zł", price_text)
                 if not price_match:
@@ -159,7 +161,8 @@ def is_interesting_item(title, price):
     t_f = title.lower()
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci",
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka",
-             "adapter", "obudowa", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat"]
+             "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat",
+             "obudowa"]
     if any(x in t_f for x in trash): return False, "TRASH"
 
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
@@ -211,7 +214,7 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v39.2 | OLX + VINTED COOKIE + ALLEGRO LOKALNIE HTML")
+    log_debug("🚀 SNIPER v39.3 | OLX + VINTED COOKIE + ALLEGRO LOKALNIE")
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
