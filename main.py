@@ -84,7 +84,11 @@ def scrape_vinted(query):
             new_count = 0
             for item in items:
                 title = item.get("title", "")
-                price = float(item.get("price", 0))
+                price_raw = item.get("price", 0)
+                if isinstance(price_raw, dict):
+                    price = float(price_raw.get("amount", 0))
+                else:
+                    price = float(price_raw or 0)
                 item_url = item.get("url", "")
                 if not item_url.startswith("http"):
                     item_url = f"https://www.vinted.pl{item_url}"
@@ -161,8 +165,8 @@ def is_interesting_item(title, price):
     t_f = title.lower()
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci",
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka",
-             "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat", "r4i",
-             "obudowa"]
+             "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat",
+             "obudowa", "r4i"]
     if any(x in t_f for x in trash): return False, "TRASH"
 
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
