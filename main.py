@@ -243,5 +243,5 @@ if __name__ == "__main__":
         if IS_FIRST_RUN:
             IS_FIRST_RUN = False
 
-        log_debug("💤 Koniec pętli. Przerwa 300s.")
-        time.sleep(300)
+        log_debug("💤 Koniec pętli. Przerwa! 😴")
+        time.sleep(120)
