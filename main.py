@@ -8,7 +8,7 @@ os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- KONFIGURACJA API ---
+# --- MAGAZYNEK KLUCZY ---
 SCRAPER_KEYS = [
     "558dd7ae69a6b68bf43a2cf2cb11be37",
     "34fef74e3ced51e01bb8391a147e909e",
@@ -23,7 +23,6 @@ SCRAPING_DOG_KEY = "69cc2236cca5a0331e084197"
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
-# --- FILTRY I BAZA ---
 SENT_HASHES = set()
 IS_FIRST_RUN = True
 
@@ -34,24 +33,20 @@ def send_telegram_alert(msg):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-    except Exception as e:
-        log_debug(f"❌ Błąd wysyłania alertu: {e}")
+    except: pass
 
 def is_interesting_item(title, price):
     t_f = title.lower()
     
-    # 1. ŚMIECI (Akcesoria, części, karty pamięci)
+    # 1. ŚMIECI
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci", 
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka", "adapter"]
-    if any(x in t_f for x in trash):
-        return False, "TRASH"
+    if any(x in t_f for x in trash): return False, "TRASH"
     
-    # 2. FILTR GIER (Z ochroną nazw konsol)
-    # Szukamy słów "gra", "gry", "game", "games" jako osobnych wyrazów (\b)
+    # 2. FILTR GIER (Z ochroną Gameboya/Konsol)
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
-        # Jeśli znaleźliśmy słowo "gra", sprawdzamy czy to nie jest nazwa konsoli
-        # Jeśli NIE MA żadnego z tych słów, to znaczy że to sama gra
-        if not any(ok in t_f for ok in ["boy", "gear", "station", "cube", "watch", "advance", "color", "dsi", "vita"]):
+        # Sprawdzamy, czy to na pewno nie konsola
+        if not any(ok in t_f for ok in ["boy", "gear", "station", "cube", "watch", "advance", "color", "dsi", "vita", "konsola"]):
             return False, "SINGLE_GAME"
 
     # 3. KATEGORYZACJA
@@ -72,29 +67,22 @@ def is_interesting_item(title, price):
     
     if not cat: return False, "NO_CAT"
     
-    # 4. TWOJE CENY (Bez zmian)
+    # 4. TWOJE SZTYWNE CENY
     limits = {
-        "PSP": 250, 
-        "VITA": 650, 
-        "3DS": 550, 
-        "2DS": 400, 
-        "DS_OLD": 150, 
-        "RETRO": 300, 
-        "TCG_ETB": 300, 
-        "TCG_BB": 700, 
-        "TCG_BUNDLE": 150, 
-        "FIRST_PARTNER": 150
+        "PSP": 250, "VITA": 650, "3DS": 550, "2DS": 400, "DS_OLD": 150, 
+        "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 150
     }
     
-    if 45 < price <= limits.get(cat, 1000): 
-        return True, cat
+    if 45 < price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
 
 def extract_vinted_items(html):
     found = []
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
+    # Vinted przy renderingu JS często zmienia klasy, szukamy szeroko
     items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
+    if not items: items = soup.select('div[class*="feed-grid__item"]')
     if not items: items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
     
     for item in items:
@@ -117,66 +105,53 @@ def scrape_vinted(query):
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
     
-    # --- 1. ScraperAPI ---
     if not SCRAPER_DEAD:
         try:
             current_key = SCRAPER_KEYS[CURRENT_KEY_IDX]
-            log_debug(f"🔍 [ScraperAPI] Szukam: {query} (Klucz {CURRENT_KEY_IDX+1})...")
-            # Dodajemy render=false (oszczędność), ale z renderowaniem czasem lepiej idzie. Zostawmy bez na razie.
-            r = requests.get('https://api.scraperapi.com/', params={'api_key': current_key, 'url': target_url}, timeout=25)
+            log_debug(f"🔍 [ScraperAPI] Szukam: {query} (Klucz {CURRENT_KEY_IDX+1} + RENDER)...")
+            
+            # WŁĄCZAMY RENDER I COUNTRY_CODE
+            params = {
+                'api_key': current_key,
+                'url': target_url,
+                'render': 'true',
+                'country_code': 'pl'
+            }
+            r = requests.get('https://api.scraperapi.com/', params=params, timeout=40)
             
             if r.status_code == 200:
-                if "datadome" in r.text.lower() or "captcha" in r.text.lower():
-                    log_debug(f"⚠️ [ScraperAPI] Blokada Datadome na kluczu {CURRENT_KEY_IDX+1}. Przeskakuję...")
-                    # Nie marnujemy mrówek, idziemy do następnej frazy
-                    return 
+                if "datadome" in r.text.lower():
+                    log_debug("⚠️ Blokada Datadome mimo renderingu!")
+                    return
 
                 items = extract_vinted_items(r.text)
                 if items:
                     log_debug(f"✅ [ScraperAPI] Znalazłem {len(items)} ofert.")
                     for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                    return # Sukces - kończymy funkcję, nie odpalamy Anta!
+                    return
                 else:
-                    log_debug(f"❓ [ScraperAPI] Brak ofert w odpowiedzi (pusta strona?).")
-                    # Tutaj opcjonalnie: return (żeby nie marnować Anta) lub kontynuuj do Anta.
-                    # Zostawiam return, żeby oszczędzać kredyty ScrapingAnt.
-                    return 
-
+                    log_debug("❓ Brak ofert w HTML (mimo statusu 200).")
             elif r.status_code in [403, 429]:
-                log_debug(f"❌ Klucz {CURRENT_KEY_IDX+1} wyczerpany.")
+                log_debug(f"❌ Klucz {CURRENT_KEY_IDX+1} pusty.")
                 CURRENT_KEY_IDX += 1
                 if CURRENT_KEY_IDX >= len(SCRAPER_KEYS):
                     SCRAPER_DEAD = True
-                    send_telegram_alert("⚠️ *ALERT: ScraperAPI wyczerpany!*")
-                return # Idziemy do Anta dopiero w następnym wywołaniu lub po błędzie
+                    send_telegram_alert("🚨 *Klucze ScraperAPI wyczerpane!* Jedziemy na awaryjnym Ant.")
         except Exception as e:
-            log_debug(f"💥 Błąd ScraperAPI: {e}")
+            log_debug(f"💥 Błąd: {e}")
 
-    # --- 2. ScrapingAnt (Tylko jeśli ScraperAPI jest martwy lub rzucił błąd) ---
+    # AWARYJNY ANT (Tylko jak ScraperAPI padnie)
     if SCRAPER_DEAD:
         try:
             log_debug(f"🐜 [ScrapingAnt] Szukam: {query}...")
-            # ScrapingAnt jest droższy, używamy go tylko jak ScraperAPI leży
             ant_url = f"https://api.scrapingant.com/v2/general?url={urllib.parse.quote(target_url)}&x-api-key={SCRAPING_ANT_KEY}&browser=false"
-            r = requests.get(ant_url, timeout=25)
+            r = requests.get(ant_url, timeout=30)
             if r.status_code == 200:
                 items = extract_vinted_items(r.text)
                 if items:
                     log_debug(f"✅ [ScrapingAnt] Znalazłem {len(items)} ofert.")
                     for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
         except: pass
-
-
-    # --- 3. ScrapingDog (Ostatnia deska ratunku) ---
-    try:
-        log_debug(f"🐕 [ScrapingDog] Szukam: {query}...")
-        r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPING_DOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
-        if r.status_code == 200:
-            items = extract_vinted_items(r.text)
-            if items:
-                log_debug(f"✅ [ScrapingDog] Znalazłem {len(items)} ofert.")
-                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-    except: pass
 
 def scrape_olx(query):
     try:
@@ -205,22 +180,21 @@ def process_item(title, url, price, src):
         SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v36.0 | START")
+    log_debug("🚀 SNIPER v37.0 | RENDER MODE ON")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
     
     while True:
         current_hour = time.localtime().tm_hour
         if 1 <= current_hour < 6:
-            log_debug("🌙 Przerwa nocna (01:00 - 06:00)...")
-            time.sleep(1800)
-            continue
+            log_debug("🌙 Przerwa nocna...")
+            time.sleep(1800); continue
 
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q)
             time.sleep(2)
             scrape_vinted(q)
-            time.sleep(10) # Bezpieczny odstęp między zapytaniami
+            time.sleep(12) 
             
         if IS_FIRST_RUN: 
             log_debug("✅ Baza początkowa gotowa.")
