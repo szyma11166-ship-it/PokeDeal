@@ -23,25 +23,53 @@ def log_debug(msg):
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    if any(x in t_f for x in ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "gra ", "gry ", "game", "games"]): 
+    
+    # --- POPRAWIONY FILTR ŚMIECI ---
+    # Ignorujemy gry/akcesoria, ale oszczędzamy konsole
+    trash_keywords = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci"]
+    if any(x in t_f for x in trash_keywords):
         return False, "TRASH"
+    
+    # Specyficzny filtr na gry (żeby nie wycinać słowa Gameboy/Gamegear)
+    # Szukamy "gra", "gry", "game" jako osobnych słów
+    if re.search(r'\b(gra|gry|game|games)\b', t_f):
+        # Jeśli w tytule jest "game", ale nie ma "boy" ani "gear" ani "station", to pewnie gra
+        if not any(ok in t_f for ok in ["boy", "gear", "station", "cube", "watch"]):
+            return False, "SINGLE_GAME"
+
     cat = None
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f: cat = "FIRST_PARTNER"
         elif "etb" in t_f or "elite trainer" in t_f: cat = "TCG_ETB"
         elif any(x in t_f for x in ["display", "booster box", "bb", "boosterbox"]): cat = "TCG_BB"
         elif "bundle" in t_f: cat = "TCG_BUNDLE"
+    
     if not cat:
         if "ps vita" in t_f or "psvita" in t_f: cat = "VITA"
         elif "psp" in t_f and any(x in t_f for x in ["1004", "2004", "3004", "go", "street", "konsola"]): cat = "PSP"
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
         elif any(x in t_f for x in ["nintendo ds", " dsi", " ds lite"]): cat = "DS_OLD"
-        elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance"]): cat = "RETRO"
+        elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance", "game boy"]): cat = "RETRO"
+    
     if not cat: return False, "NO_CAT"
     
-    limits = {"PSP": 250, "VITA": 650, "3DS": 500, "2DS": 350, "DS_OLD": 160, "RETRO": 300, "TCG_ETB": 300, "TCG_BB": 750, "TCG_BUNDLE": 160, "FIRST_PARTNER": 120}
-    if 49 < price <= limits.get(cat, 1000): return True, cat
+    # --- NOWE WYŻSZE LIMITY CENOWE ---
+    limits = {
+        "PSP": 250, 
+        "VITA": 650, 
+        "3DS": 550, 
+        "2DS": 400, 
+        "DS_OLD": 150, 
+        "RETRO": 300, # Podniesione z 300, żeby łapać GBA w lepszym stanie
+        "TCG_ETB": 300, 
+        "TCG_BB": 700, 
+        "TCG_BUNDLE": 150, 
+        "FIRST_PARTNER": 150
+    }
+    
+    if 45 < price <= limits.get(cat, 1000): 
+        return True, cat
     return False, "PRICE"
 
 def extract_vinted_items(html):
