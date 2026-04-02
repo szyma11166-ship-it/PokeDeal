@@ -7,32 +7,16 @@ os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'):
     time.tzset()
 
-# --- TWOJE KLUCZE (29 SZTUK) ---
-OLOSTEP_KEYS = [
-    "olostep_koEUWUkQ7ue1e56xsJEmXBIwhFgNUWjvOT7U", "olostep_Jtz86lFTzVTyVnYr7Ci2LaMC0wnelqGB2kjJ",
-    "olostep_HNb7ahynRXVg053o9YYSCuoIZIe5PCI3PYQp", "olostep_ilStdJ4wxfJm80DhrKYUo5x9oGh5bQ1ex3vJ",
-    "olostep_F9a3YpVhC4rD1aoQXOxdW6NIRqVJpoF9ykY1", "olostep_h1B6t6i3o1LomV7wgkJRuTrKORCyfuwZ7Wtv",
-    "olostep_E1ULbEpkGVj3ebtbNl7GERlMh4yOWfsD9c1X", "olostep_uLmphHL0rHj1iikKHexEnHxItbHyTaUWtiLi",
-    "olostep_n8Y2d5FCsjrdtaqy5cGmT5nFiSMF8MeEE6O8", "olostep_r28K78wzg2GVLDVz4V6F1Qa0UdT17pN3Ratd",
-    "olostep_tP1WrjpuagOsYCdctCOQQx6cwTzkbVIJfUXw", "olostep_nFP0YwFWIdTUazbEIsivJRR5JepmdORVm9nv",
-    "olostep_yVHx982cBYQlfXZUDcjAezgbffQ1Ot2v4o42", "olostep_lv02DqXQIQQ6WF1PMLdQgTePaKeVTmjbaLy8",
-    "olostep_4HAwlpNG0bJu9a9YFjM3IiAjOFarGaYeUZEX", "olostep_cJuSrUHAdGe97mdiuNilJs6DQFN934tByRAb",
-    "olostep_Ismu4Th5YKA4NV5wTYUqNQL2Eod2pOWfdCEK", "olostep_yZ8GRKuSoA3deLXYxIMdOJZezFYOxVWkSKjH",
-    "olostep_BwAhFJuK9ZzyOqtQEDuX0QwxWmAc6ZSj65HJ", "olostep_ElxXEs8WCSrtaPU3RE5E3azbuMDEe6Vx03Rv",
-    "olostep_J3hXd9tU8hcP8qTHqqmFhzzrsaoG0V4neNy7", "olostep_Aok0E95IbyvijgPCeS4qLEFv0FJ58x3PxsP0",
-    "olostep_Ai2L7IEzCRI8WY1Ofa10aHNj8PpT1p0wV18W", "olostep_uZYru9zWGHl60W4CO7aj5T2Dud48id3MmhPr",
-    "olostep_gu9B52cJ30OV20ShHwLiMbfHUcFB1F3iVXBd", "olostep_MSTMsMkYk0AdyC8JoGD7hk2wrhsC3EzUmWt1",
-    "olostep_KuvN0l1m3DqzjPvIVhsvp4hSBZBZ8rhLOnt6", "olostep_lxVgFBkSFN8LOeHLpBBBBRmwZm5YsNYC6b7P",
-    "olostep_TEZ2ySYKVa93lLRbH45NDbLeyIck1ghRgEhc"
-]
+# --- TWOJE NOWE KLUCZE ---
+SCRAPER_API_KEY = "48611f7ab450207b4931b3d235028a60"
+SCRAPING_ANT_KEY = "5587f74b5a154af9a235f145e72cfdec"
+SCRAPING_DOG_KEY = "69cc2236cca5a0331e084197"
 
-SCRAPINGDOG_KEY = "69cc2236cca5a0331e084197"
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
 SENT_HASHES = set()
 IS_FIRST_RUN = True
-OLO_INDEX = 0
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -64,8 +48,10 @@ def extract_vinted_items(html):
     found = []
     if not html: return found
     soup = BeautifulSoup(html, "html.parser")
+    # Szukamy kafelków Vinted
     items = soup.find_all("div", attrs={"data-testid": re.compile(r"grid-item|product-item")})
     if not items: items = soup.find_all("div", class_=re.compile(r"new-item-box|feed-item"))
+    
     for item in items:
         link = item.find("a", href=True)
         if not link or "/items/" not in link['href']: continue
@@ -82,57 +68,46 @@ def extract_vinted_items(html):
     return found
 
 def scrape_vinted(query):
-    global OLO_INDEX
     q_enc = urllib.parse.quote_plus(query)
     target_url = f"https://www.vinted.pl/catalog?search_text={q_enc}&order=newest_first"
-    success = False
-
-    for attempt in range(2):
-        idx = OLO_INDEX % len(OLOSTEP_KEYS)
-        key = OLOSTEP_KEYS[idx]
-        # W drugiej próbie wymuszamy JS, żeby sprawdzić czy to coś zmieni
-        use_js = (attempt == 1)
-        
-        try:
-            r = requests.post(
-                "https://api.olostep.com/v1/scrapes", 
-                json={"url_to_scrape": target_url, "render_js": use_js}, 
-                headers={"Authorization": f"Bearer {key}"}, 
-                timeout=25
-            )
-            
-            if r.status_code == 200:
-                html = r.json().get('default_snapshot', {}).get('content', '')
-                if "datadome" in html.lower():
-                    log_debug(f"⚠️ [Olo-{idx}] Datadome detect.")
-                else:
-                    items = extract_vinted_items(html)
-                    if items:
-                        log_debug(f"✅ [Olo-{idx}] OK ({len(items)}) | JS: {use_js}")
-                        for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-                        success = True; break
-                    else:
-                        log_debug(f"ℹ️ [Olo-{idx}] Brak ofert | JS: {use_js}")
-                        success = True; break
-            elif r.status_code == 402:
-                # DIAGNOSTYKA BŁĘDU 402
-                error_msg = r.json().get('message', 'No message')
-                log_debug(f"🛑 [DIAGNOZA-402] Klucz {idx} ({key[-4:]}): {error_msg}")
-            else:
-                log_debug(f"❌ [Olo-{idx}] HTTP {r.status_code}")
-                
-            OLO_INDEX += 1
-        except Exception as e:
-            log_debug(f"❌ [Olo-{idx}] Błąd: {str(e)}")
-            OLO_INDEX += 1
-
-    if not success:
-        try:
-            r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPINGDOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
-            if r.status_code == 200:
-                items = extract_vinted_items(r.text)
+    
+    # 1. PRÓBA: ScraperAPI
+    try:
+        log_debug(f"🔍 [ScraperAPI] Szukam: {query}...")
+        r = requests.get('https://api.scraperapi.com/', params={'api_key': SCRAPER_API_KEY, 'url': target_url}, timeout=30)
+        if r.status_code == 200:
+            items = extract_vinted_items(r.text)
+            if items:
+                log_debug(f"✅ [ScraperAPI] Znalazłem {len(items)} ofert.")
                 for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
-        except: pass
+                return
+            elif "datadome" in r.text.lower():
+                log_debug("⚠️ [ScraperAPI] Wykryto blokadę Datadome.")
+    except: pass
+
+    # 2. PRÓBA: ScrapingAnt
+    try:
+        log_debug(f"🐜 [ScrapingAnt] Szukam: {query}...")
+        ant_url = f"https://api.scrapingant.com/v2/general?url={urllib.parse.quote(target_url)}&x-api-key={SCRAPING_ANT_KEY}"
+        r = requests.get(ant_url, timeout=30)
+        if r.status_code == 200:
+            items = extract_vinted_items(r.text)
+            if items:
+                log_debug(f"✅ [ScrapingAnt] Znalazłem {len(items)} ofert.")
+                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+                return
+    except: pass
+
+    # 3. PRÓBA: ScrapingDog (Awaryjnie)
+    try:
+        log_debug(f"🐕 [ScrapingDog] Szukam: {query}...")
+        r = requests.get("https://api.scrapingdog.com/scrape", params={"api_key": SCRAPING_DOG_KEY, "url": target_url, "dynamic": "false"}, timeout=20)
+        if r.status_code == 200:
+            items = extract_vinted_items(r.text)
+            if items:
+                log_debug(f"✅ [ScrapingDog] Znalazłem {len(items)} ofert.")
+                for i in items: process_item(i['title'], i['url'], i['price'], "VINTED")
+    except: pass
 
 def scrape_olx(query):
     try:
@@ -155,22 +130,26 @@ def process_item(title, url, price, src):
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-            log_debug(f"🎯 WYSŁANO: {title[:15]}")
+            log_debug(f"🎯 WYSŁANO: {title[:20]} ({price} zł)")
         SENT_HASHES.add(h); SENT_HASHES.add(clean_url)
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v33.0 | THE DETECTIVE")
+    log_debug("🚀 SNIPER v34.0 | THE MULTI-PROXY")
     QUERIES = ["nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "gameboy advance", "gameboy color", "pokemon etb", "pokemon booster box", "pokemon bundle", "first partner pack"]
+    
     while True:
+        # PRZERWA NOCNA (01:00 - 05:59)
         current_hour = time.localtime().tm_hour
         if 1 <= current_hour < 6:
-            log_debug("🌙 Nocna pauza..."); time.sleep(1800); continue
+            log_debug("🌙 Przerwa nocna..."); time.sleep(1800); continue
 
         random.shuffle(QUERIES)
         for q in QUERIES:
             scrape_olx(q); time.sleep(5)
             scrape_vinted(q); time.sleep(15)
             
-        if IS_FIRST_RUN: log_debug("✅ Baza gotowa."); IS_FIRST_RUN = False
-        log_debug(f"💤 Przerwa 400s. Klucz: {OLO_INDEX % len(OLOSTEP_KEYS)}")
+        if IS_FIRST_RUN: 
+            log_debug("✅ Baza początkowa gotowa."); IS_FIRST_RUN = False
+            
+        log_debug("💤 Koniec pętli. Przerwa 400s.")
         time.sleep(400)
