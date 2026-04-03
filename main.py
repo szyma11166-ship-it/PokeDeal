@@ -1,8 +1,7 @@
-import subprocess, sys
-try:
-    from vinted_api_wrapper import Vinted
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "vinted-api-wrapper", "--quiet"])
+import subprocess, sys, os
+_venv_pip = "/app/.venv/bin/pip"
+if os.path.exists(_venv_pip):
+    subprocess.call([_venv_pip, "install", "vinted-api-wrapper", "--quiet"])
 
 import requests
 from bs4 import BeautifulSoup
