@@ -1,8 +1,4 @@
-import subprocess, sys, os
-_venv_pip = "/app/.venv/bin/pip"
-if os.path.exists(_venv_pip):
-    subprocess.call([_venv_pip, "install", "vinted-api-wrapper", "--quiet"])
-
+from curl_cffi import requests as curl_requests
 import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os
@@ -17,16 +13,6 @@ CHAT_ID = "-1003743099672"
 
 SENT_HASHES = set()
 IS_FIRST_RUN = True
-
-# --- VINTED WRAPPER ---
-try:
-    from vinted_api_wrapper import Vinted
-    vinted = Vinted(domain="pl")
-    VINTED_OK = True
-    print("✅ vinted-api-wrapper załadowany")
-except Exception as e:
-    VINTED_OK = False
-    print(f"❌ Brak vinted-api-wrapper: {e} — zainstaluj: pip install vinted-api-wrapper")
 
 # --- SESJE ---
 OLX_SESSION = requests.Session()
@@ -51,29 +37,44 @@ def send_telegram(msg):
         )
     except: pass
 
-# --- VINTED ---
+# --- VINTED (curl_cffi omija DataDome) ---
 def scrape_vinted(query):
-    if not VINTED_OK:
-        return
     try:
-        results = vinted.search(query, per_page=30, order="newest_first")
-        items = getattr(results, "items", []) or []
-        new_count = 0
-        for item in items:
-            title = getattr(item, "title", "") or ""
-            price_obj = getattr(item, "price", None)
-            if price_obj is None:
-                continue
-            if hasattr(price_obj, "amount"):
-                price = float(price_obj.amount)
-            else:
-                price = float(price_obj)
-            url = getattr(item, "url", "") or ""
-            if not url.startswith("http"):
-                url = f"https://www.vinted.pl{url}"
-            if process_item(title, url, price, "VINTED"):
-                new_count += 1
-        log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
+        q_enc = urllib.parse.quote_plus(query)
+        url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={q_enc}&order=newest_first&per_page=30"
+        r = curl_requests.get(
+            url,
+            impersonate="chrome120",
+            timeout=20,
+            headers={
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "pl-PL,pl;q=0.9",
+                "Referer": "https://www.vinted.pl/catalog",
+            }
+        )
+        if r.status_code == 200:
+            try:
+                data = r.json()
+            except:
+                log_debug("⚠️ Vinted — odpowiedź nie jest JSON")
+                return
+            items = data.get("items", [])
+            new_count = 0
+            for item in items:
+                title = item.get("title", "")
+                price_raw = item.get("price", 0)
+                if isinstance(price_raw, dict):
+                    price = float(price_raw.get("amount", 0))
+                else:
+                    price = float(price_raw or 0)
+                item_url = item.get("url", "")
+                if not item_url.startswith("http"):
+                    item_url = f"https://www.vinted.pl{item_url}"
+                if process_item(title, item_url, price, "VINTED"):
+                    new_count += 1
+            log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
+        else:
+            log_debug(f"⚠️ Vinted status: {r.status_code}")
     except Exception as e:
         log_debug(f"💥 Błąd Vinted: {e}")
 
@@ -195,7 +196,7 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v39.6 | OLX + VINTED WRAPPER + ALLEGRO LOKALNIE")
+    log_debug("🚀 SNIPER v40.0 | OLX + VINTED curl_cffi + ALLEGRO LOKALNIE")
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
