@@ -1,3 +1,4 @@
 requests
 beautifulsoup4
 curl_cffi
+vinted-api-wrapper
