@@ -52,13 +52,19 @@ def vinted_init():
     global VINTED_LAST_INIT
     try:
         log_debug("🔄 Inicjalizuję sesję Vinted...")
+        
+        # Zmieniamy tożsamość przeglądarki przy każdym resecie, żeby zgubić trop
+        browsers = ["chrome120", "chrome116", "safari15_5", "edge101"]
+        VINTED_SESSION.impersonate = random.choice(browsers)
+        VINTED_SESSION.cookies.clear() # Czyścimy zbanowane ciasteczka
+        
         r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
         if r.status_code == 200:
-            log_debug("✅ Sesja Vinted gotowa")
+            log_debug(f"✅ Sesja Vinted gotowa ({VINTED_SESSION.impersonate})")
             VINTED_LAST_INIT = time.time()
             return True
         else:
-            log_debug(f"⚠️ Vinted init status: {r.status_code}")
+            log_debug(f"⚠️ Vinted init status: {r.status_code} - Prawdopodobnie blokada IP!")
             return False
     except Exception as e:
         log_debug(f"💥 Błąd init Vinted: {e}")
@@ -77,17 +83,21 @@ def scrape_vinted(query):
         q_enc = urllib.parse.quote_plus(query)
         url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={q_enc}&order=newest_first&per_page=30"
         r = VINTED_SESSION.get(url, timeout=20)
-        if r.status_code == 401:
-            log_debug("🔄 Vinted 401 — odświeżam sesję...")
+        
+        # Obsługa błędów 401 (wygasła sesja) i 403 (blokada Datadome)
+        if r.status_code in [401, 403]:
+            log_debug(f"🔄 Vinted {r.status_code} — Ściana! Pauza 15s i reset sesji...")
+            time.sleep(15) # Dajemy im odetchnąć
             if vinted_init():
                 r = VINTED_SESSION.get(url, timeout=20)
             else:
                 return
+                
         if r.status_code == 200:
             try:
                 data = r.json()
             except:
-                log_debug("⚠️ Vinted — odpowiedź nie jest JSON")
+                log_debug("⚠️ Vinted — odpowiedź nie jest JSON (Captcha w tle?)")
                 return
             items = data.get("items", [])
             new_count = 0
@@ -105,7 +115,7 @@ def scrape_vinted(query):
                     new_count += 1
             log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
         else:
-            log_debug(f"⚠️ Vinted status: {r.status_code}")
+            log_debug(f"⚠️ Vinted ostateczny status: {r.status_code}")
     except Exception as e:
         log_debug(f"💥 Błąd Vinted: {e}")
 
