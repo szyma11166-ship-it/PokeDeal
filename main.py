@@ -185,7 +185,7 @@ def is_interesting_item(title, price):
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci",
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka",
              "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat",
-             "obudowa", "r4i", "akryl", "spelstall", "bateria"]
+             "obudowa", "r4i", "akryl", "spelstall", "ink", "bateria"]
     if any(x in t_f for x in trash): return False, "TRASH"
 
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
