@@ -58,22 +58,42 @@ def vinted_login():
         log_debug("🔐 Loguję do Vinted...")
         VINTED_SESSION.cookies.clear()
 
-        # Pobierz CSRF token
+        # Pobierz stronę główną i szukaj CSRF wszędzie
         r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=15)
         csrf = None
-        match = re.search(r'"csrf_token"\s*:\s*"([^"]+)"', r.text)
-        if match:
-            csrf = match.group(1)
+
+        # Wzorce w HTML/JS
+        for pattern in [
+            r'"csrf_token"\s*:\s*"([^"]+)"',
+            r'"csrfToken"\s*:\s*"([^"]+)"',
+            r'name="csrf-token"\s+content="([^"]+)"',
+            r'content="([^"]+)"\s+name="csrf-token"',
+            r'csrf-token["\s]+content="([^"]+)"',
+            r'_token["\s]*:\s*["\']([^"\']+)["\']',
+        ]:
+            m = re.search(pattern, r.text)
+            if m:
+                csrf = m.group(1)
+                break
+
+        # Fallback: meta tag
         if not csrf:
             soup = BeautifulSoup(r.text, "html.parser")
             meta = soup.find("meta", {"name": "csrf-token"})
             if meta:
                 csrf = meta.get("content")
-        if not csrf:
-            log_debug("❌ Brak CSRF token")
-            return False
 
-        VINTED_SESSION.headers.update({"X-CSRF-Token": csrf})
+        # Fallback: ciasteczko
+        if not csrf:
+            csrf = (VINTED_SESSION.cookies.get("XSRF-TOKEN") or
+                    VINTED_SESSION.cookies.get("csrf_token") or
+                    VINTED_SESSION.cookies.get("_csrf_token"))
+
+        if csrf:
+            log_debug(f"✅ CSRF token znaleziony")
+            VINTED_SESSION.headers.update({"X-CSRF-Token": csrf})
+        else:
+            log_debug("⚠️ Brak CSRF — próba logowania bez niego")
 
         r2 = VINTED_SESSION.post(
             "https://www.vinted.pl/api/v2/sessions",
@@ -85,14 +105,13 @@ def vinted_login():
             VINTED_LAST_LOGIN = time.time()
             return True
         else:
-            log_debug(f"❌ Błąd logowania Vinted: {r2.status_code} — {r2.text[:100]}")
+            log_debug(f"❌ Błąd logowania Vinted: {r2.status_code} — {r2.text[:150]}")
             return False
     except Exception as e:
         log_debug(f"💥 Wyjątek logowania Vinted: {e}")
         return False
 
 def vinted_ensure_session():
-    global VINTED_LAST_LOGIN
     if time.time() - VINTED_LAST_LOGIN > VINTED_LOGIN_INTERVAL:
         return vinted_login()
     return True
@@ -257,10 +276,10 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v39.4 | OLX + VINTED AUTO-LOGIN + ALLEGRO LOKALNIE")
+    log_debug("🚀 SNIPER v39.5 | OLX + VINTED AUTO-LOGIN + ALLEGRO LOKALNIE")
 
     if not vinted_login():
-        log_debug("⚠️ Vinted niedostępny na starcie, spróbuję później...")
+        log_debug("⚠️ Vinted niedostępny na starcie, spróbuję w pętli...")
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
