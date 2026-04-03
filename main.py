@@ -1,34 +1,29 @@
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os, json
+import re, time, random, hashlib, os
 import urllib.parse
 
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'): time.tzset()
 
 # --- KONFIGURACJA ---
-VINTED_LOGIN    = "vedoleb384@agoalz.com"
-VINTED_PASSWORD = "Pidzama1!"
-
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
 SENT_HASHES = set()
 IS_FIRST_RUN = True
-VINTED_LAST_LOGIN = 0
-VINTED_LOGIN_INTERVAL = 3 * 3600  # odnawiaj sesję co 3h
+
+# --- VINTED WRAPPER ---
+try:
+    from vinted_api_wrapper import Vinted
+    vinted = Vinted(domain="pl")
+    VINTED_OK = True
+    print("✅ vinted-api-wrapper załadowany")
+except Exception as e:
+    VINTED_OK = False
+    print(f"❌ Brak vinted-api-wrapper: {e} — zainstaluj: pip install vinted-api-wrapper")
 
 # --- SESJE ---
-VINTED_SESSION = requests.Session()
-VINTED_SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
-    "Referer": "https://www.vinted.pl/catalog",
-    "Origin": "https://www.vinted.pl",
-    "X-Requested-With": "XMLHttpRequest",
-})
-
 OLX_SESSION = requests.Session()
 OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
@@ -51,110 +46,29 @@ def send_telegram(msg):
         )
     except: pass
 
-# --- LOGOWANIE VINTED ---
-def vinted_login():
-    global VINTED_LAST_LOGIN
-    try:
-        log_debug("🔐 Loguję do Vinted...")
-        VINTED_SESSION.cookies.clear()
-
-        # Pobierz stronę główną i szukaj CSRF wszędzie
-        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=15)
-        csrf = None
-
-        # Wzorce w HTML/JS
-        for pattern in [
-            r'"csrf_token"\s*:\s*"([^"]+)"',
-            r'"csrfToken"\s*:\s*"([^"]+)"',
-            r'name="csrf-token"\s+content="([^"]+)"',
-            r'content="([^"]+)"\s+name="csrf-token"',
-            r'csrf-token["\s]+content="([^"]+)"',
-            r'_token["\s]*:\s*["\']([^"\']+)["\']',
-        ]:
-            m = re.search(pattern, r.text)
-            if m:
-                csrf = m.group(1)
-                break
-
-        # Fallback: meta tag
-        if not csrf:
-            soup = BeautifulSoup(r.text, "html.parser")
-            meta = soup.find("meta", {"name": "csrf-token"})
-            if meta:
-                csrf = meta.get("content")
-
-        # Fallback: ciasteczko
-        if not csrf:
-            csrf = (VINTED_SESSION.cookies.get("XSRF-TOKEN") or
-                    VINTED_SESSION.cookies.get("csrf_token") or
-                    VINTED_SESSION.cookies.get("_csrf_token"))
-
-        if csrf:
-            log_debug(f"✅ CSRF token znaleziony")
-            VINTED_SESSION.headers.update({"X-CSRF-Token": csrf})
-        else:
-            log_debug("⚠️ Brak CSRF — próba logowania bez niego")
-
-        r2 = VINTED_SESSION.post(
-            "https://www.vinted.pl/api/v2/sessions",
-            json={"login": VINTED_LOGIN, "password": VINTED_PASSWORD, "remember": True},
-            timeout=15
-        )
-        if r2.status_code in [200, 201]:
-            log_debug("✅ Zalogowano do Vinted!")
-            VINTED_LAST_LOGIN = time.time()
-            return True
-        else:
-            log_debug(f"❌ Błąd logowania Vinted: {r2.status_code} — {r2.text[:150]}")
-            return False
-    except Exception as e:
-        log_debug(f"💥 Wyjątek logowania Vinted: {e}")
-        return False
-
-def vinted_ensure_session():
-    if time.time() - VINTED_LAST_LOGIN > VINTED_LOGIN_INTERVAL:
-        return vinted_login()
-    return True
-
 # --- VINTED ---
 def scrape_vinted(query):
-    if not vinted_ensure_session():
+    if not VINTED_OK:
         return
-
-    q_enc = urllib.parse.quote_plus(query)
-    url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={q_enc}&order=newest_first&per_page=30"
     try:
-        r = VINTED_SESSION.get(url, timeout=20)
-        if r.status_code in [401, 403]:
-            log_debug(f"🔄 Vinted {r.status_code} — próba relogowania...")
-            if vinted_login():
-                r = VINTED_SESSION.get(url, timeout=20)
+        results = vinted.search(query, per_page=30, order="newest_first")
+        items = getattr(results, "items", []) or []
+        new_count = 0
+        for item in items:
+            title = getattr(item, "title", "") or ""
+            price_obj = getattr(item, "price", None)
+            if price_obj is None:
+                continue
+            if hasattr(price_obj, "amount"):
+                price = float(price_obj.amount)
             else:
-                send_telegram("⚠️ *SNIPER* — Logowanie Vinted nie działa\\! Sprawdź dane\\.")
-                return
-        if r.status_code == 200:
-            try:
-                data = r.json()
-            except:
-                log_debug("⚠️ Vinted — odpowiedź nie jest JSON")
-                return
-            items = data.get("items", [])
-            new_count = 0
-            for item in items:
-                title = item.get("title", "")
-                price_raw = item.get("price", 0)
-                if isinstance(price_raw, dict):
-                    price = float(price_raw.get("amount", 0))
-                else:
-                    price = float(price_raw or 0)
-                item_url = item.get("url", "")
-                if not item_url.startswith("http"):
-                    item_url = f"https://www.vinted.pl{item_url}"
-                if process_item(title, item_url, price, "VINTED"):
-                    new_count += 1
-            log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
-        else:
-            log_debug(f"⚠️ Vinted status: {r.status_code}")
+                price = float(price_obj)
+            url = getattr(item, "url", "") or ""
+            if not url.startswith("http"):
+                url = f"https://www.vinted.pl{url}"
+            if process_item(title, url, price, "VINTED"):
+                new_count += 1
+        log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
     except Exception as e:
         log_debug(f"💥 Błąd Vinted: {e}")
 
@@ -276,10 +190,7 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v39.5 | OLX + VINTED AUTO-LOGIN + ALLEGRO LOKALNIE")
-
-    if not vinted_login():
-        log_debug("⚠️ Vinted niedostępny na starcie, spróbuję w pętli...")
+    log_debug("🚀 SNIPER v39.6 | OLX + VINTED WRAPPER + ALLEGRO LOKALNIE")
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
