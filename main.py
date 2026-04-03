@@ -13,8 +13,18 @@ CHAT_ID = "-1003743099672"
 
 SENT_HASHES = set()
 IS_FIRST_RUN = True
+VINTED_LAST_INIT = 0
+VINTED_INIT_INTERVAL = 2 * 3600  # odnawiaj sesję co 2h
 
-# --- SESJE ---
+# Sesja curl_cffi dla Vinted - zachowuje ciasteczka
+VINTED_SESSION = curl_requests.Session(impersonate="chrome120")
+VINTED_SESSION.headers.update({
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "pl-PL,pl;q=0.9",
+    "Referer": "https://www.vinted.pl/catalog",
+    "Origin": "https://www.vinted.pl",
+})
+
 OLX_SESSION = requests.Session()
 OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
@@ -37,21 +47,42 @@ def send_telegram(msg):
         )
     except: pass
 
-# --- VINTED (curl_cffi omija DataDome) ---
+# --- INICJALIZACJA SESJI VINTED ---
+def vinted_init():
+    global VINTED_LAST_INIT
+    try:
+        log_debug("🔄 Inicjalizuję sesję Vinted...")
+        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        if r.status_code == 200:
+            log_debug("✅ Sesja Vinted gotowa")
+            VINTED_LAST_INIT = time.time()
+            return True
+        else:
+            log_debug(f"⚠️ Vinted init status: {r.status_code}")
+            return False
+    except Exception as e:
+        log_debug(f"💥 Błąd init Vinted: {e}")
+        return False
+
+def vinted_ensure():
+    if time.time() - VINTED_LAST_INIT > VINTED_INIT_INTERVAL:
+        return vinted_init()
+    return True
+
+# --- VINTED ---
 def scrape_vinted(query):
+    if not vinted_ensure():
+        return
     try:
         q_enc = urllib.parse.quote_plus(query)
         url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={q_enc}&order=newest_first&per_page=30"
-        r = curl_requests.get(
-            url,
-            impersonate="chrome120",
-            timeout=20,
-            headers={
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "pl-PL,pl;q=0.9",
-                "Referer": "https://www.vinted.pl/catalog",
-            }
-        )
+        r = VINTED_SESSION.get(url, timeout=20)
+        if r.status_code == 401:
+            log_debug("🔄 Vinted 401 — odświeżam sesję...")
+            if vinted_init():
+                r = VINTED_SESSION.get(url, timeout=20)
+            else:
+                return
         if r.status_code == 200:
             try:
                 data = r.json()
@@ -196,7 +227,9 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v40.0 | OLX + VINTED curl_cffi + ALLEGRO LOKALNIE")
+    log_debug("🚀 SNIPER v40.1 | OLX + VINTED SESSION + ALLEGRO LOKALNIE")
+
+    vinted_init()
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
