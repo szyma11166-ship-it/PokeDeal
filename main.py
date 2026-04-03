@@ -185,7 +185,7 @@ def is_interesting_item(title, price):
     trash = ["r36s", "miyoo", "anbernic", "powkiddy", "stojak", "case", "uchwyt", "części", "czesci",
              "karta", "etui", "pudełko", "pudelko", "box", "instrukcja", "ładowarka", "ladowarka",
              "adapter", "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat",
-             "obudowa", "r4i"]
+             "obudowa", "r4i", "akryl", "spelstall", "bateria"]
     if any(x in t_f for x in trash): return False, "TRASH"
 
     if re.search(r'\b(gra|gry|game|games)\b', t_f):
@@ -197,22 +197,22 @@ def is_interesting_item(title, price):
         if "first partner" in t_f: cat = "FIRST_PARTNER"
         elif any(x in t_f for x in ["etb", "elite trainer"]): cat = "TCG_ETB"
         elif any(x in t_f for x in ["display", "booster box", "bb", "boosterbox"]): cat = "TCG_BB"
-        elif "bundle" in t_f: cat = "TCG_BUNDLE"
+        elif any(x in t_f for x in ["bundle", "booster bundle"]): cat = "TCG_BUNDLE"
 
     if not cat:
         if "ps vita" in t_f or "psvita" in t_f: cat = "VITA"
-        elif "psp" in t_f: cat = "PSP"
+        elif "psp" in t_f or "playstation portable" in t_f or "play station portable" in t_f: cat = "PSP"
         elif "3ds" in t_f: cat = "3DS"
         elif "2ds" in t_f: cat = "2DS"
-        elif any(x in t_f for x in ["nintendo ds", "dsi", "ds lite", "ds xl"]): cat = "DS_OLD"
-        elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance", "game boy"]): cat = "RETRO"
+        elif any(x in t_f for x in ["nintendo ds", "dsi", "ds lite", "ds xl", "dsi xl"]): cat = "DS_OLD"
+        elif any(x in t_f for x in ["gameboy", "gba", "dmg", "gbc", "color", "advance", "gameboy pocket", "game boy pocket", "game boy"]): cat = "RETRO"
 
     if not cat: return False, "NO_CAT"
 
     limits = {
         "PSP": 250, "VITA": 650, "3DS": 550, "2DS": 400,
-        "DS_OLD": 150, "RETRO": 300, "TCG_ETB": 300,
-        "TCG_BB": 700, "TCG_BUNDLE": 150, "FIRST_PARTNER": 150
+        "DS_OLD": 170, "RETRO": 300, "TCG_ETB": 300,
+        "TCG_BB": 700, "TCG_BUNDLE": 160, "FIRST_PARTNER": 150
     }
     if 45 < price <= limits.get(cat, 1000): return True, cat
     return False, "PRICE"
@@ -264,5 +264,5 @@ if __name__ == "__main__":
         if IS_FIRST_RUN:
             IS_FIRST_RUN = False
 
-        log_debug("💤 Koniec pętli. Przerwa 300s.")
+        log_debug("💤 Koniec pętli. Przerwa.")
         time.sleep(300)
