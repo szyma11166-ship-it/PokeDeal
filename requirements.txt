@@ -1,4 +1,4 @@
 requests
 beautifulsoup4
 curl_cffi
-vinted-api-wrapper
+vinted-api-wrapper==0.3.9
