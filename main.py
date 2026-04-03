@@ -7,18 +7,16 @@ os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'): time.tzset()
 
 # --- KONFIGURACJA ---
-# Wejdź na vinted.pl w przeglądarce → F12 → Application → Cookies
-# Skopiuj WSZYSTKIE poniższe ciasteczka które znajdziesz (resztę zostaw pustą)
-VINTED_SESSION_COOKIE = "KzhRZWJsV0Izek9ydzk1NFZkRHhlT3FTS3MyaUJpNm1wUisvSEVsYTdnSnJiZ0lvWGc0c0tKbFdTdmNQaW8zNkxEeGp1TWhZUjFuenlBNHpIYU9OQlc0clJDRHlINzJSbTZ3TW5sYVp2d2xPSUtBbGZjdS9ianRLaGxYaXBsTFVubHFDc1F5UjFMZ2FTWTlIVTZpb21sL2p0TXBUbkRySlI5ZWRsQUhGek1XaG1VRXNVM1YzYXJRaGRESkRyem9pckZQRm43Qi9jQW1IV0VVaGlxNFA4WVdzNG84aElBUFlyMERQUFFuRjdOc21IQldKUE5MdUdjM3ZydDlyVmUwQzY4bURZaTdsOTlVWVFsYjVxQkhBTTJGdW9PcE1rb0ZnbzFKOTFCUVhON1BXMnZEcDJGcEJBeS9KNTdDSG84QXItLU02VjhPQ296TXE4endyY1ByaW5XNmc9PQ%3D%3D--e33bf42a7064f2d01711d0f4423aee169ada990e"       # _vinted_fr_session  (wymagane)
-VINTED_ACCESS_TOKEN   = "eyJraWQiOiJFNTdZZHJ1SHBsQWp1MmNObzFEb3JIM2oyN0J1NS1zX09QNVB3UGlobjVNIiwiYWxnIjoiUFMyNTYifQ.eyJhY2NvdW50X2lkIjo3NjIwNjk5NSwiYXBwX2lkIjo0LCJhdWQiOiJmci5jb3JlLmFwaSIsImNsaWVudF9pZCI6IndlYiIsImV4cCI6MTc3NTE2NDY3MSwiaWF0IjoxNzc1MTU3NDcxLCJpc3MiOiJ2aW50ZWQtaWFtLXNlcnZpY2UiLCJsb2dpbl90eXBlIjozLCJwdXJwb3NlIjoiYWNjZXNzIiwic2NvcGUiOiJ1c2VyIiwic2lkIjoiYWNjYWM3NGItMTc3NTE1NzQ3MSIsInN1YiI6IjEwNjkzNDEyOSIsImNjIjoiUEwiLCJhbmlkIjoiOGUxMDRiMGUtNzg5OC00NmYwLWJiNDEtMjg0NmUzOWMyZWViIiwiYWN0Ijp7InN1YiI6IjEwNjkzNDEyOSJ9fQ.ei-kSKdxaSdLvU85fn2glbyU0iLjkXxjxzeU-CRYYfQwnTV1PMxOEcF6NQ9mrLH4viqI0WZnfVlhDTe-X82XTQgvGRjwrLoiRky1nz7GYj0c-dZOVvrI_Yf6_hj_ahXAvvyW-NVESLY4bt5FgIoKdDU4zUrdIoErGL5r_AEees_y7sVpR1cl06OmpM1Y00Fa6aB2WZO3HtOu3is3UetQatEQT1HFmnNKovcTi6SlDWkkU3MJDb4GH4LSopyQPKO80FtUzY7s25Oi7DPJs_8s0yx2KhwrmZigXL4kDr0QRUQaW7l6yF8Jyn4qc7MYXVuc3fOcQvFsVytihEg3oAMGfg"
-VINTED_ANON_ID        = "8e104b0e-7898-46f0-bb41-2846e39c2eeb"
+VINTED_LOGIN    = "vedoleb384@agoalz.com"
+VINTED_PASSWORD = "Pidzama1!"
 
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
 SENT_HASHES = set()
 IS_FIRST_RUN = True
-VINTED_SESSION_DEAD = False
+VINTED_LAST_LOGIN = 0
+VINTED_LOGIN_INTERVAL = 3 * 3600  # odnawiaj sesję co 3h
 
 # --- SESJE ---
 VINTED_SESSION = requests.Session()
@@ -30,12 +28,6 @@ VINTED_SESSION.headers.update({
     "Origin": "https://www.vinted.pl",
     "X-Requested-With": "XMLHttpRequest",
 })
-VINTED_SESSION.cookies.set("_vinted_fr_session", VINTED_SESSION_COOKIE, domain=".vinted.pl")
-if VINTED_ACCESS_TOKEN:
-    VINTED_SESSION.cookies.set("access_token", VINTED_ACCESS_TOKEN, domain=".vinted.pl")
-    VINTED_SESSION.headers.update({"Authorization": f"Bearer {VINTED_ACCESS_TOKEN}"})
-if VINTED_ANON_ID:
-    VINTED_SESSION.cookies.set("anon_id", VINTED_ANON_ID, domain=".vinted.pl")
 
 OLX_SESSION = requests.Session()
 OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
@@ -59,10 +51,55 @@ def send_telegram(msg):
         )
     except: pass
 
+# --- LOGOWANIE VINTED ---
+def vinted_login():
+    global VINTED_LAST_LOGIN
+    try:
+        log_debug("🔐 Loguję do Vinted...")
+        VINTED_SESSION.cookies.clear()
+
+        # Pobierz CSRF token
+        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=15)
+        csrf = None
+        match = re.search(r'"csrf_token"\s*:\s*"([^"]+)"', r.text)
+        if match:
+            csrf = match.group(1)
+        if not csrf:
+            soup = BeautifulSoup(r.text, "html.parser")
+            meta = soup.find("meta", {"name": "csrf-token"})
+            if meta:
+                csrf = meta.get("content")
+        if not csrf:
+            log_debug("❌ Brak CSRF token")
+            return False
+
+        VINTED_SESSION.headers.update({"X-CSRF-Token": csrf})
+
+        r2 = VINTED_SESSION.post(
+            "https://www.vinted.pl/api/v2/sessions",
+            json={"login": VINTED_LOGIN, "password": VINTED_PASSWORD, "remember": True},
+            timeout=15
+        )
+        if r2.status_code in [200, 201]:
+            log_debug("✅ Zalogowano do Vinted!")
+            VINTED_LAST_LOGIN = time.time()
+            return True
+        else:
+            log_debug(f"❌ Błąd logowania Vinted: {r2.status_code} — {r2.text[:100]}")
+            return False
+    except Exception as e:
+        log_debug(f"💥 Wyjątek logowania Vinted: {e}")
+        return False
+
+def vinted_ensure_session():
+    global VINTED_LAST_LOGIN
+    if time.time() - VINTED_LAST_LOGIN > VINTED_LOGIN_INTERVAL:
+        return vinted_login()
+    return True
+
 # --- VINTED ---
 def scrape_vinted(query):
-    global VINTED_SESSION_DEAD
-    if VINTED_SESSION_DEAD:
+    if not vinted_ensure_session():
         return
 
     q_enc = urllib.parse.quote_plus(query)
@@ -70,10 +107,12 @@ def scrape_vinted(query):
     try:
         r = VINTED_SESSION.get(url, timeout=20)
         if r.status_code in [401, 403]:
-            log_debug(f"🔄 Vinted {r.status_code} — sesja nieważna")
-            VINTED_SESSION_DEAD = True
-            send_telegram("⚠️ *SNIPER* — Sesja Vinted wygasła\\!\nPodmień `_vinted_fr_session` z ciasteczek przeglądarki\\.")
-            return
+            log_debug(f"🔄 Vinted {r.status_code} — próba relogowania...")
+            if vinted_login():
+                r = VINTED_SESSION.get(url, timeout=20)
+            else:
+                send_telegram("⚠️ *SNIPER* — Logowanie Vinted nie działa\\! Sprawdź dane\\.")
+                return
         if r.status_code == 200:
             try:
                 data = r.json()
@@ -218,7 +257,10 @@ def process_item(title, url, price, src):
 
 # --- GŁÓWNA PĘTLA ---
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v39.3 | OLX + VINTED COOKIE + ALLEGRO LOKALNIE")
+    log_debug("🚀 SNIPER v39.4 | OLX + VINTED AUTO-LOGIN + ALLEGRO LOKALNIE")
+
+    if not vinted_login():
+        log_debug("⚠️ Vinted niedostępny na starcie, spróbuję później...")
 
     QUERIES = [
         "nintendo ds konsola", "psp konsola", "ps vita", "nintendo 3ds",
@@ -243,5 +285,5 @@ if __name__ == "__main__":
         if IS_FIRST_RUN:
             IS_FIRST_RUN = False
 
-        log_debug("💤 Koniec pętli. Przerwa! 😴")
-        time.sleep(120)
+        log_debug("💤 Koniec pętli. Przerwa 300s.")
+        time.sleep(300)
