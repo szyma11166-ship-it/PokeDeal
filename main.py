@@ -11,8 +11,8 @@ if hasattr(time, 'tzset'): time.tzset()
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
 
-SENT_HASHES = set()       # hashe tytułów (anty-duplikat treści)
-SENT_URLS = set()         # URL-e (primary key deduplikacji)
+SENT_HASHES = set()
+SENT_URLS = set()
 IS_FIRST_RUN = True
 VINTED_LAST_INIT = 0
 VINTED_INIT_INTERVAL = 2 * 3600
@@ -178,53 +178,110 @@ def scrape_allegro_lokalnie(query):
     except Exception as e:
         log_debug(f"💥 Błąd Allegro Lokalnie: {e}")
 
-# --- FILTR AKCESORIÓW (sam/sama/tylko) ---
+# ---------------------------------------------------------------------------
+# FILTRY
+# ---------------------------------------------------------------------------
+
+# Słowa kluczowe konsol — używane w wielu filtrach
+CONSOLE_WORDS = [
+    "vita", "psp", "konsola", "zestaw", "console",
+    "3ds", "2ds", "dsi", "ds lite", "gameboy", "game boy", "gba",
+    "nintendo", "playstation",
+]
+
+# Akcesoria które są OK w zestawie z konsolą, ale nie jako samodzielna oferta
+ACCESSORY_STANDALONE = [
+    "ładowarka", "ladowarka", "kabel", "zasilacz", "adapter",
+    "bateria", "etui", "obudowa", "rysik", "pokrowiec",
+    "stojak", "uchwyt", "case", "ekran",
+]
+
+def has_console(title):
+    """Czy tytuł zawiera nazwę konsoli?"""
+    t = title.lower()
+    return any(w in t for w in CONSOLE_WORDS)
+
+def is_standalone_accessory(title):
+    """Blokuj akcesorium tylko gdy nie ma konsoli w tytule."""
+    t = title.lower()
+    if any(x in t for x in ACCESSORY_STANDALONE):
+        if not has_console(t):
+            return True
+    return False
+
+def is_standalone_memory_card(title):
+    """Blokuj kartę pamięci tylko gdy nie ma konsoli w tytule."""
+    t = title.lower()
+    if any(x in t for x in ["karta pamięci", "memory card", "karta ms", "karta sd"]):
+        if not has_console(t):
+            return True
+    return False
+
+# Stare ACCESSORY_PHRASES zostawiamy jako dodatkową warstwę dla "sam/sama/tylko"
 ACCESSORY_PHRASES = [
     r"\bsam(a|e|ego|emu|ą)?\s+(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|ekran|rysik|case|pokrowiec)",
     r"\b(tylko|sam(a)?)\s+(kabel|ładowark|zasilacz|adapter|bater|etui|obudow|rysik)",
     r"^(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|rysik|pokrowiec|case|stojak|uchwyt)\b",
 ]
 
-def is_accessory_only(title):
+def is_accessory_phrase(title):
     t = title.lower()
     for pattern in ACCESSORY_PHRASES:
         if re.search(pattern, t):
             return True
     return False
 
-# --- FILTR OKAZJI ---
+# ---------------------------------------------------------------------------
+# GŁÓWNY FILTR
+# ---------------------------------------------------------------------------
 def is_interesting_item(title, price):
     t_f = title.lower()
 
-    # Twarde śmieci - akcesoria, klony, nośniki
-    trash = [
+    # --- TWARDE ŚMIECI — nigdy nie są OK niezależnie od kontekstu ---
+    trash_absolute = [
+        # Klony i chińszczyzna
         "r36s", "miyoo", "anbernic", "powkiddy",
-        "stojak", "case", "uchwyt", "etui", "pudełko", "pudelko",
-        "instrukcja", "ładowarka", "ladowarka", "adapter",
-        "bajka", "film", "dvd", "książka", "komiks", "płyta", "plyta", "plakat",
-        "obudowa", "r4i", "r4", "akryl", "spelstall", "ink",
-        "bateria", "kabel", "zasilacz", "rysik", "pokrowiec",
-        # puste opakowania
-        "samo pudełko", "samo pudelko", "samo opakowanie", "tylko opakowanie",
-        "bez konsoli", "bez gry",
+        # Media i nośniki
+        "bajka", "film", "dvd", "książka", "komiks",
+        "płyta", "plyta", "plakat", "ink",
+        # Puste opakowania
+        "samo pudełko", "samo pudelko", "samo opakowanie",
+        "tylko opakowanie", "bez konsoli", "bez gry",
+        # Mody/flashcarty
+        "r4i", "r4",
+        # Akcesoria typowo PSP/Vita bez wartości kolekcjonerskiej
+        "akryl", "spelstall",
+        # Pokemon — luźne/pojedyncze karty
+        "luźne karty", "luzne karty",
+        "pojedyncza karta", "pojedyncze karty",
+        "karty pokemon", "karta pokemon",
+        "pokemon karty", "karty z pokemon",
+        "pojedynczy booster", "jeden booster", "1 booster",
     ]
-    if any(x in t_f for x in trash):
+    if any(x in t_f for x in trash_absolute):
         return False, "TRASH"
 
-    # Filtr sam/sama/tylko akcesorium
-    if is_accessory_only(t_f):
+    # --- AKCESORIA STANDALONE (OK w zestawie z konsolą) ---
+    if is_accessory_phrase(t_f):
         return False, "ACCESSORY"
 
-    # Filtr gier — blokuj POJEDYNCZĄ grę, ale PRZEPUŚĆ zestawy
-    # Zestaw gier = "gry" (mnoga) LUB słowa zestaw/lot/komplet/kilka/+ gier
-    has_game_word = bool(re.search(r'\b(gra|game)\b', t_f))  # TYLKO liczba pojedyncza
+    if is_standalone_accessory(t_f):
+        return False, "ACCESSORY"
+
+    # --- KARTA PAMIĘCI STANDALONE ---
+    if is_standalone_memory_card(t_f):
+        return False, "MEMORY_CARD"
+
+    # --- FILTR POJEDYNCZEJ GRY ---
+    # Blokuj pojedynczą grę, przepuść zestawy i konsole z grą
+    has_game_word = bool(re.search(r'\b(gra|game)\b', t_f))
     has_console_word = any(x in t_f for x in [
         "konsola", "console", "boy", "gear", "station", "cube",
         "watch", "advance", "color", "dsi", "vita", "psp", "3ds", "2ds", "ds"
     ])
     has_set_word = any(x in t_f for x in [
         "zestaw", "lot", "komplet", "kilka", "zestaw gier", "+ gier",
-        "gry", "games",  # liczba mnoga = zestaw
+        "gry", "games",
     ])
 
     if has_game_word and not has_console_word and not has_set_word:
@@ -233,20 +290,21 @@ def is_interesting_item(title, price):
     # --- KATEGORYZACJA ---
     cat = None
 
-    # Pokémon TCG
+    # Pokémon TCG — od najbardziej szczegółowych
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f:
             cat = "FIRST_PARTNER"
         elif any(x in t_f for x in ["etb", "elite trainer"]):
             cat = "TCG_ETB"
-        elif any(x in t_f for x in ["display", "booster box", "bb", "boosterbox"]):
+        elif any(x in t_f for x in ["display", "booster box", "boosterbox"]):
             cat = "TCG_BB"
         elif any(x in t_f for x in ["bundle", "booster bundle"]):
             cat = "TCG_BUNDLE"
-        elif any(x in t_f for x in ["kolekcja", "karty", "zestaw kart"]):
-            cat = "TCG_ETB"  # często ETB/BB opisane po polsku
+        elif any(x in t_f for x in ["kolekcja", "zestaw kart", "zestaw boosterów", "sealed"]):
+            cat = "TCG_ETB"
+        # Samo "karty" / "pokemon karty" → NO_CAT (odrzut)
 
-    # Konsole — kolejność ważna (od bardziej do mniej szczegółowych)
+    # Konsole — od bardziej do mniej szczegółowych
     if not cat:
         if "ps vita" in t_f or "psvita" in t_f or "vita slim" in t_f or "ps vita 2000" in t_f:
             cat = "VITA"
@@ -276,17 +334,17 @@ def is_interesting_item(title, price):
     if not cat:
         return False, "NO_CAT"
 
-    # Limity cenowe (dolny: 30 zł)
+    # --- LIMITY CENOWE ---
     limits = {
-        "PSP":          250,
-        "VITA":         650,
-        "3DS":          550,
-        "2DS":          400,
-        "DS_OLD":       170,
-        "RETRO":        300,
-        "TCG_ETB":      300,
-        "TCG_BB":       700,
-        "TCG_BUNDLE":   160,
+        "PSP":           250,
+        "VITA":          650,
+        "3DS":           550,
+        "2DS":           400,
+        "DS_OLD":        170,
+        "RETRO":         300,
+        "TCG_ETB":       300,
+        "TCG_BB":        700,
+        "TCG_BUNDLE":    160,
         "FIRST_PARTNER": 150,
     }
 
@@ -295,18 +353,17 @@ def is_interesting_item(title, price):
 
     return False, "PRICE"
 
-# --- DEDUPLIKACJA I WYSYŁKA ---
+# ---------------------------------------------------------------------------
+# DEDUPLIKACJA I WYSYŁKA
+# ---------------------------------------------------------------------------
 def process_item(title, url, price, src):
     global IS_FIRST_RUN
 
-    # Normalizacja URL — primary key
     clean_url = url.split("?")[0].rstrip("/")
 
-    # Szybkie odrzucenie po URL (najdokładniejsze)
     if clean_url in SENT_URLS:
         return False
 
-    # Hash treści jako backup (ten sam przedmiot, inny URL)
     content_hash = hashlib.md5(f"{title[:40].lower().strip()}_{int(price)}".encode()).hexdigest()
     if content_hash in SENT_HASHES:
         return False
@@ -317,14 +374,15 @@ def process_item(title, url, price, src):
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
             send_telegram(msg)
             log_debug(f"🎯 WYSŁANO: {title[:35]} ({price} zł) [{res}]")
-        # Zapisz oba klucze
         SENT_URLS.add(clean_url)
         SENT_HASHES.add(content_hash)
         return True
 
     return False
 
-# --- ZAPYTANIA ---
+# ---------------------------------------------------------------------------
+# ZAPYTANIA
+# ---------------------------------------------------------------------------
 QUERIES = [
     # PSP
     "psp konsola", "psp 1000", "psp 2000", "psp 3000",
@@ -336,19 +394,23 @@ QUERIES = [
     "nintendo ds konsola", "ds lite", "dsi konsola",
     # Game Boy
     "gameboy advance", "gba sp", "gameboy color", "game boy",
-    # Pokémon TCG
-    "pokemon etb", "pokemon booster box", "pokemon bundle",
-    "first partner pack", "pokemon kolekcja", "pokemon karty",
+    # Pokémon TCG — tylko sealed produkty
+    "pokemon etb", "pokemon elite trainer box",
+    "pokemon booster box", "pokemon display",
+    "pokemon bundle", "pokemon booster bundle",
+    "first partner pack",
+    "pokemon kolekcja sealed", "pokemon zestaw sealed",
 ]
 
-# --- GŁÓWNA PĘTLA ---
+# ---------------------------------------------------------------------------
+# GŁÓWNA PĘTLA
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v41.0 | Ulepszona deduplikacja, filtry i zapytania")
+    log_debug("🚀 SNIPER v43.0 | Inteligentne filtry akcesoriów — OK w zestawie z konsolą")
 
     vinted_init()
 
     while True:
-        # Cisza nocna
         if 1 <= time.localtime().tm_hour < 6:
             log_debug("🌙 Cisza nocna — pauza 30 min")
             time.sleep(1800)
