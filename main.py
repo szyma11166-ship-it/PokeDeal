@@ -232,20 +232,88 @@ def is_interesting_item(title, price):
     t_f = title.lower()
 
     # --- TWARDE ŚMIECI ---
+    
     trash_absolute = [
+        
+        # --- KLONY / CHIŃSZCZYZNA ---
         "r36s", "miyoo", "anbernic", "powkiddy",
-        "bajka", "film", "dvd", "książka", "komiks",
-        "płyta", "plyta", "plakat", "ink",
-        "samo pudełko", "samo pudelko", "samo opakowanie",
+
+        # --- MEDIA / DRUKI ---
+        "bajka", "film", "dvd", "książka", "komiks",        # PL
+        "bok", "serietidning", "comic",                      # SV
+        "kniha", "časopis",                                  # CS
+        "könyv", "képregény",                                # HU
+        "kirja", "sarjakuva", "elokuva",                     # FI
+        "bog", "tegneserie",                                 # DA
+        "boek", "stripboek",                                 # NL
+        "buch",                                              # DE
+        "livre", "bande dessinée",                           # FR
+        "libro", "fumetto",                                  # IT/ES
+
+        # --- PŁYTA / PLAKAT ---
+        "płyta", "plyta", "plakat", "ink",                  # PL
+        "skiva", "affisch",                                  # SV
+        "deska", "plakát",                                   # CS/SK
+        "lemez", "poszter",                                  # HU
+        "levy", "juliste",                                   # FI
+
+        # --- SAMO PUDEŁKO / BEZ KONSOLI ---
+        "samo pudełko", "samo pudelko", "samo opakowanie",  # PL
         "tylko opakowanie", "bez konsoli", "bez gry",
-        "r4i", "r4", "bateria", "battery", "shell",
-        "akryl", "spelstall",
-        "luźne karty", "luzne karty",
+        "bara lådan", "endast lådan", "utan konsol", "utan spel", "tom låda", "tomt fodral",  # SV
+        "jen krabice", "pouze krabice", "bez konzole", "bez hry", "prázdná krabice",          # CS
+        "len škatuľa", "iba škatuľa", "bez konzoly", "prázdna škatuľa",                      # SK
+        "csak doboz", "konzol nélkül", "játék nélkül", "üres doboz",                         # HU
+        "pelkkä kotelo", "vain kotelo", "ilman konsolia", "ilman peliä", "tyhjä kotelo",      # FI
+        "kun kassen", "uden konsol", "uden spil", "tom kasse",                               # DA
+        "alleen doos", "zonder console", "zonder spel", "lege doos",                         # NL
+        "nur hülle", "ohne konsole", "ohne spiel", "leere hülle", "leere box",               # DE
+        "boîte vide", "sans console", "sans jeu", "juste la boîte",                          # FR
+        "solo scatola", "senza console", "senza gioco", "scatola vuota",                     # IT
+        "empty box", "box only", "case only", "without console", "no console",               # EN
+        "no game", "housing only", "faceplate",
+
+        # --- OBUDOWY / SHELL ---
+        "obudowa", "obudowa konsoli",                        # PL
+        "shell", "replacement shell", "replacement housing", "console shell", "shell only",  # EN
+        "acrylic shell",                                     # EN
+        "skal", "hölje",                                     # SV
+        "kryt", "pouzdro",                                   # CS
+        "puzdro",                                            # SK
+        "ház", "tok",                                        # HU
+        "kuori",                                             # FI
+        "hoes", "behuizing",                                 # NL
+        "gehäuse",                                           # DE
+        "coque", "boîtier",                                  # FR
+        "scocca", "custodia",                                # IT
+
+        # --- AKRYL / STOJAKI ---
+        "akryl", "akrylowy stojak", "spelstall",             # PL/SV
+        "acrylic", "acrylic stand", "acrylic case", "acrylic display",  # EN
+
+        # --- AKCESORIA ELEKTRONICZNE ---
+        "r4i", "r4", "bateria", "battery",
+
+        # --- POKÉMON TCG: LUZEM / SINGLE ---
+        "luźne karty", "luzne karty",                        # PL
         "pojedyncza karta", "pojedyncze karty",
         "karty pokemon", "karta pokemon",
         "pokemon karty", "karty z pokemon",
         "pojedynczy booster", "jeden booster", "1 booster",
+        "lösa kort", "enskilt kort", "pokemon kort", "ett boosterpack", "enstaka kort", "löst kort",  # SV
+        "volné karty", "jednotlivá karta", "jednotlivý booster",                                       # CS
+        "voľné karty", "jednotlivý booster",                                                           # SK
+        "egyes kártya", "loose kártyák", "pokemon kártyák", "egy booster", "egyedi booster",          # HU
+        "yksittäinen kortti", "irralliset kortit", "pokemon kortit", "yksi boosteri", "yksittäinen boosteri",  # FI
+        "løse kort", "enkelt kort", "en booster",                                                      # DA
+        "losse kaarten", "enkele kaart", "pokemon kaarten", "één booster", "losse booster",           # NL
+        "einzelne karte", "lose karten", "pokemon karten", "ein booster", "einzelner booster",        # DE
+        "cartes seules", "carte seule", "cartes pokemon", "un booster", "booster unique",             # FR
+        "carta singola", "carte singole", "carte pokemon", "booster singolo",                         # IT
+        "single card", "loose cards", "pokemon cards bulk", "one booster", "1 booster pack",         # EN
+        "single booster", "bulk cards", "common cards", "random cards", "card lot", "pokemon card",
     ]
+    
     if any(x in t_f for x in trash_absolute):
         return False, "TRASH"
 
@@ -318,18 +386,26 @@ def is_interesting_item(title, price):
             cat = "RETRO"
 
     # --- SONY AUDIO & APPLE AUDIO ---
-    if not cat:
-        is_sony = "sony" in t_f
-        # Walkman: odtwarzacz kaset/MD/MP3 marki Sony
-        if is_sony and any(x in t_f for x in ["walkman", "wm-"]):
-            cat = "WALKMAN"
-        # Discman: przenośny odtwarzacz CD marki Sony (D-xxx lub discman)
-        elif is_sony and any(x in t_f for x in ["discman", "d-e", "d-j", "d-ej", "d-ne", "d-nf", "d-nx", "cd player"]):
-            cat = "DISCMAN"
-        # Walkman/Discman bez Sony w tytule — ignoruj
-        # iPod nano
-        elif "ipod nano" in t_f or ("ipod" in t_f and "nano" in t_f):
-            cat = "IPOD_NANO"
+        if not cat:
+            is_sony = "sony" in t_f
+            is_phone = any(x in t_f for x in [
+                "telefon", "smartfon", "smartphone", "phone", "mobile",
+                "xperia", "android", "iphone",
+                "komórkowy", "komorkowy",
+                "mobilny", "mobiltelefon",
+                "puhelin",
+                "telefoon",
+                "handy",
+                "téléphone",
+                "telefono",
+            ])
+
+            if is_sony and not is_phone and any(x in t_f for x in ["walkman", "wm-"]):
+                cat = "WALKMAN"
+            elif is_sony and not is_phone and any(x in t_f for x in ["discman", "d-e", "d-j", "d-ej", "d-ne", "d-nf", "d-nx", "cd player"]):
+                cat = "DISCMAN"
+            elif "ipod nano" in t_f or ("ipod" in t_f and "nano" in t_f):
+                cat = "IPOD_NANO"
 
     if not cat:
         return False, "NO_CAT"
@@ -337,16 +413,16 @@ def is_interesting_item(title, price):
     # --- LIMITY CENOWE ---
     limits = {
         "PSP":           250,
-        "VITA":          650,
-        "3DS":           550,
-        "2DS":           400,
+        "VITA":          600,
+        "3DS":           500,
+        "2DS":           350,
         "DS_OLD":        170,
         "RETRO":         300,
-        "TCG_ETB":       300,
-        "TCG_BB":        700,
+        "TCG_ETB":       280,
+        "TCG_BB":        650,
         "TCG_BUNDLE":    160,
         "FIRST_PARTNER": 150,
-        "WALKMAN":       500,
+        "WALKMAN":       400,
         "DISCMAN":       100,
         "IPOD_NANO":     150,
     }
