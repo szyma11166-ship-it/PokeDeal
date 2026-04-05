@@ -186,12 +186,42 @@ CONSOLE_WORDS = [
     "vita", "psp", "konsola", "zestaw", "console",
     "3ds", "2ds", "dsi", "ds lite", "gameboy", "game boy", "gba",
     "nintendo", "playstation",
+    "spelkonsol", "konsoll",
+    "herní konzole", "konzole", "konzola",
+    "játékkonzol", "konzol",
+    "pelikonsoli", "konsoli",
+    "spelcomputer",
+    "spielkonsole", "konsole",
+    "console de jeu", "console di gioco",
 ]
 
 ACCESSORY_STANDALONE = [
+    # PL
     "ładowarka", "ladowarka", "kabel", "zasilacz", "adapter",
-    "bateria", "etui", "obudowa", "rysik", "pokrowiec",
-    "stojak", "uchwyt", "case", "ekran",
+    "etui", "rysik", "pokrowiec", "stojak", "uchwyt", "case", "ekran",
+    # EN
+    "charger", "charging cable", "power supply", "power adapter",
+    "stylus", "carry case", "stand", "grip",
+    # SV
+    "laddare", "nätaggregat", "fodral", "skärm",
+    # CS
+    "nabíječka", "napájení", "pouzdro",
+    # SK
+    "nabíjačka", "napájanie", "puzdro",
+    # HU
+    "töltő", "töltőkábel", "kijelző",
+    # FI
+    "laturi", "kaapeli", "kotelo", "näyttö",
+    # DA
+    "oplader", "skærm",
+    # NL
+    "oplader", "voeding", "hoesje",
+    # DE
+    "ladekabel", "ladegerät", "netzteil", "tasche",
+    # FR
+    "chargeur", "câble", "alimentation", "étui", "stylet",
+    # IT
+    "caricatore", "cavo", "alimentatore", "custodia",
 ]
 
 def has_console(title):
@@ -207,15 +237,57 @@ def is_standalone_accessory(title):
 
 def is_standalone_memory_card(title):
     t = title.lower()
-    if any(x in t for x in ["karta pamięci", "memory card", "karta ms", "karta sd"]):
+    if any(x in t for x in [
+        "karta pamięci", "memory card", "memory stick", "karta ms", "karta sd",
+        "minneskort",
+        "paměťová karta",
+        "pamäťová karta",
+        "memóriakártya",
+        "muistikortti",
+        "geheugenkaart",
+        "speicherkarte",
+        "carte mémoire",
+        "scheda di memoria",
+    ]):
         if not has_console(t):
             return True
     return False
 
 ACCESSORY_PHRASES = [
+    # PL
     r"\bsam(a|e|ego|emu|ą)?\s+(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|ekran|rysik|case|pokrowiec)",
     r"\b(tylko|sam(a)?)\s+(kabel|ładowark|zasilacz|adapter|bater|etui|obudow|rysik)",
     r"^(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|rysik|pokrowiec|case|stojak|uchwyt)\b",
+    # EN
+    r"^(charger|cable|power supply|power adapter|stylus|carry case|stand|grip)\b",
+    r"\b(only|just)\s+(the\s+)?(charger|cable|adapter|stylus|case|stand)",
+    r"\b(charger|cable)\s+only\b",
+    # SV
+    r"^(laddare|kabel|nätaggregat|fodral|skärm)\b",
+    r"\bendast\s+(laddare|kabel|adapter|fodral)",
+    # CS
+    r"^(nabíječka|kabel|napájení|pouzdro)\b",
+    r"\bjen\s+(nabíječka|kabel|adapter)",
+    # SK
+    r"^(nabíjačka|kábel|napájanie|puzdro)\b",
+    # HU
+    r"^(töltő|töltőkábel|adapter|kijelző)\b",
+    r"\bcsak\s+(töltő|kábel|adapter)",
+    # FI
+    r"^(laturi|kaapeli|kotelo|näyttö)\b",
+    r"\bvain\s+(laturi|kaapeli|adapter)",
+    # DE
+    r"^(ladekabel|ladegerät|netzteil|tasche)\b",
+    r"\bnur\s+(ladekabel|ladegerät|netzteil|kabel|adapter)",
+    # FR
+    r"^(chargeur|câble|alimentation|étui|stylet)\b",
+    r"\bseulement\s+(le\s+)?(chargeur|câble|adaptateur)",
+    # IT
+    r"^(caricatore|cavo|alimentatore|custodia)\b",
+    r"\bsolo\s+(il\s+)?(caricatore|cavo|adattatore)",
+    # NL
+    r"^(oplader|kabel|voeding|hoesje)\b",
+    r"\balleen\s+(de\s+)?(oplader|kabel|adapter)",
 ]
 
 def is_accessory_phrase(title):
@@ -231,112 +303,117 @@ def is_accessory_phrase(title):
 def is_interesting_item(title, price):
     t_f = title.lower()
 
-    # --- TWARDE ŚMIECI ---
-    
     trash_absolute = [
-        
         # --- KLONY / CHIŃSZCZYZNA ---
         "r36s", "miyoo", "anbernic", "powkiddy",
 
+        # --- UBRANIA / MERCH ---
+        "koszulka", "bluza", "t-shirt", "tshirt", "bluzka",
+        "sweatshirt", "hoodie", "shirt", "clothing", "clothes",
+        "czapka", "skarpety", "socks",
+
+        # --- AKCESORIA EKRANOWE ---
+        "szkło hartowane", "szklo hartowane", "tempered glass",
+        "screen protector", "folia ochronna", "folia na ekran",
+        "glass screen", "protective glass",
+
         # --- MEDIA / DRUKI ---
-        "bajka", "film", "dvd", "książka", "komiks",        # PL
-        "bok", "serietidning", "comic",                      # SV
-        "kniha", "časopis",                                  # CS
-        "könyv", "képregény",                                # HU
-        "kirja", "sarjakuva", "elokuva",                     # FI
-        "bog", "tegneserie",                                 # DA
-        "boek", "stripboek",                                 # NL
-        "buch",                                              # DE
-        "livre", "bande dessinée",                           # FR
-        "libro", "fumetto",                                  # IT/ES
+        "bajka", "dvd", "książka", "komiks",
+        "serietidning", "comic",
+        "kniha", "časopis",
+        "könyv", "képregény",
+        "kirja", "sarjakuva", "elokuva",
+        "bog", "tegneserie",
+        "boek", "stripboek",
+        "buch",
+        "livre", "bande dessinée",
+        "libro", "fumetto",
 
         # --- PŁYTA / PLAKAT ---
-        "płyta", "plyta", "plakat", "ink",                  # PL
-        "skiva", "affisch",                                  # SV
-        "deska", "plakát",                                   # CS/SK
-        "lemez", "poszter",                                  # HU
-        "levy", "juliste",                                   # FI
+        "płyta", "plyta", "plakat", "ink",
+        "skiva", "affisch",
+        "deska", "plakát",
+        "lemez", "poszter",
+        "levy", "juliste",
 
         # --- SAMO PUDEŁKO / BEZ KONSOLI ---
-        "samo pudełko", "samo pudelko", "samo opakowanie",  # PL
+        "samo pudełko", "samo pudelko", "samo opakowanie",
         "tylko opakowanie", "bez konsoli", "bez gry",
-        "bara lådan", "endast lådan", "utan konsol", "utan spel", "tom låda", "tomt fodral",  # SV
-        "jen krabice", "pouze krabice", "bez konzole", "bez hry", "prázdná krabice",          # CS
-        "len škatuľa", "iba škatuľa", "bez konzoly", "prázdna škatuľa",                      # SK
-        "csak doboz", "konzol nélkül", "játék nélkül", "üres doboz",                         # HU
-        "pelkkä kotelo", "vain kotelo", "ilman konsolia", "ilman peliä", "tyhjä kotelo",      # FI
-        "kun kassen", "uden konsol", "uden spil", "tom kasse",                               # DA
-        "alleen doos", "zonder console", "zonder spel", "lege doos",                         # NL
-        "nur hülle", "ohne konsole", "ohne spiel", "leere hülle", "leere box",               # DE
-        "boîte vide", "sans console", "sans jeu", "juste la boîte",                          # FR
-        "solo scatola", "senza console", "senza gioco", "scatola vuota",                     # IT
-        "empty box", "box only", "case only", "without console", "no console",               # EN
-        "no game", "housing only", "faceplate",
+        "bara lådan", "utan konsol", "utan spel", "tom låda",
+        "jen krabice", "pouze krabice", "bez konzole", "bez hry", "prázdná krabice",
+        "len škatuľa", "iba škatuľa", "bez konzoly", "prázdna škatuľa",
+        "csak doboz", "konzol nélkül", "játék nélkül", "üres doboz",
+        "pelkkä kotelo", "ilman konsolia", "ilman peliä", "tyhjä kotelo",
+        "uden konsol", "uden spil", "tom kasse",
+        "zonder console", "zonder spel", "lege doos",
+        "ohne konsole", "ohne spiel", "leere hülle", "leere box",
+        "boîte vide", "sans console", "sans jeu",
+        "senza console", "senza gioco", "scatola vuota",
+        "empty box", "box only", "without console", "no console", "no game",
+        "housing only", "faceplate",
 
         # --- OBUDOWY / SHELL ---
-        "obudowa", "obudowa konsoli",                        # PL
-        "shell", "replacement shell", "replacement housing", "console shell", "shell only",  # EN
-        "acrylic shell",                                     # EN
-        "skal", "hölje",                                     # SV
-        "kryt", "pouzdro",                                   # CS
-        "puzdro",                                            # SK
-        "ház", "tok",                                        # HU
-        "kuori",                                             # FI
-        "hoes", "behuizing",                                 # NL
-        "gehäuse",                                           # DE
-        "coque", "boîtier",                                  # FR
-        "scocca", "custodia",                                # IT
+        "obudowa", "obudowa konsoli",
+        "replacement shell", "replacement housing", "shell only",
+        "acrylic shell",
+        "hölje",
+        "kryt",
+        "puzdro",
+        "ház",
+        "kuori",
+        "behuizing",
+        "gehäuse",
+        "boîtier",
+        "scocca",
 
         # --- AKRYL / STOJAKI ---
-        "akryl", "akrylowy stojak", "spelstall",             # PL/SV
-        "acrylic", "acrylic stand", "acrylic case", "acrylic display",  # EN
+        "akryl", "akrylowy stojak", "spelstall",
+        "acrylic stand", "acrylic case", "acrylic display",
 
         # --- AKCESORIA ELEKTRONICZNE ---
         "r4i", "r4", "bateria", "battery",
 
         # --- POKÉMON TCG: LUZEM / SINGLE ---
-        "luźne karty", "luzne karty",                        # PL
+        "luźne karty", "luzne karty",
         "pojedyncza karta", "pojedyncze karty",
         "karty pokemon", "karta pokemon",
         "pokemon karty", "karty z pokemon",
         "pojedynczy booster", "jeden booster", "1 booster",
-        "lösa kort", "enskilt kort", "pokemon kort", "ett boosterpack", "enstaka kort", "löst kort",  # SV
-        "volné karty", "jednotlivá karta", "jednotlivý booster",                                       # CS
-        "voľné karty", "jednotlivý booster",                                                           # SK
-        "egyes kártya", "loose kártyák", "pokemon kártyák", "egy booster", "egyedi booster",          # HU
-        "yksittäinen kortti", "irralliset kortit", "pokemon kortit", "yksi boosteri", "yksittäinen boosteri",  # FI
-        "løse kort", "enkelt kort", "en booster",                                                      # DA
-        "losse kaarten", "enkele kaart", "pokemon kaarten", "één booster", "losse booster",           # NL
-        "einzelne karte", "lose karten", "pokemon karten", "ein booster", "einzelner booster",        # DE
-        "cartes seules", "carte seule", "cartes pokemon", "un booster", "booster unique",             # FR
-        "carta singola", "carte singole", "carte pokemon", "booster singolo",                         # IT
-        "single card", "loose cards", "pokemon cards bulk", "one booster", "1 booster pack",         # EN
+        "lösa kort", "enskilt kort", "pokemon kort", "enstaka kort",
+        "volné karty", "jednotlivá karta", "jednotlivý booster",
+        "voľné karty", "jednotlivý booster",
+        "egyes kártya", "pokemon kártyák", "egy booster", "egyedi booster",
+        "yksittäinen kortti", "irralliset kortit", "pokemon kortit", "yksi boosteri",
+        "løse kort", "enkelt kort",
+        "losse kaarten", "enkele kaart", "pokemon kaarten", "losse booster",
+        "einzelne karte", "lose karten", "pokemon karten", "einzelner booster",
+        "cartes seules", "carte seule", "cartes pokemon", "booster unique",
+        "carta singola", "carte singole", "carte pokemon", "booster singolo",
+        "single card", "loose cards", "pokemon cards bulk", "1 booster pack",
         "single booster", "bulk cards", "common cards", "random cards", "card lot", "pokemon card",
     ]
-    
     if any(x in t_f for x in trash_absolute):
         return False, "TRASH"
 
-    # --- AKCESORIA STANDALONE ---
     if is_accessory_phrase(t_f):
         return False, "ACCESSORY"
 
     if is_standalone_accessory(t_f):
         return False, "ACCESSORY"
 
-    # --- KARTA PAMIĘCI STANDALONE ---
     if is_standalone_memory_card(t_f):
         return False, "MEMORY_CARD"
 
     # --- FILTR POJEDYNCZEJ GRY ---
-    has_game_word = bool(re.search(r'\b(gra|game)\b', t_f))
+    has_game_word = bool(re.search(r'\b(gra|game|spel|hra|játék|peli)\b', t_f))
     has_console_word = any(x in t_f for x in [
         "konsola", "console", "boy", "gear", "station", "cube",
-        "watch", "advance", "color", "dsi", "vita", "psp", "3ds", "2ds", "ds"
+        "watch", "advance", "color", "dsi", "vita", "psp", "3ds", "2ds", "ds",
+        "spelkonsol", "konzole", "konzola", "konzol", "pelikonsoli", "spielkonsole",
     ])
     has_set_word = any(x in t_f for x in [
-        "zestaw", "lot", "komplet", "kilka", "zestaw gier", "+ gier",
-        "gry", "games",
+        "zestaw", "lot", "komplet", "kilka", "gry", "games",
+        "samling", "bundle", "collection", "sammlung", "collezione",
     ])
 
     if has_game_word and not has_console_word and not has_set_word:
@@ -355,14 +432,17 @@ def is_interesting_item(title, price):
             cat = "TCG_BB"
         elif any(x in t_f for x in ["bundle", "booster bundle"]):
             cat = "TCG_BUNDLE"
-        elif any(x in t_f for x in ["kolekcja", "zestaw kart", "zestaw boosterów", "sealed"]):
+        elif any(x in t_f for x in [
+            "kolekcja", "zestaw kart", "zestaw boosterów", "sealed",
+            "samling", "collection", "collezione", "sammlung", "tin",
+        ]):
             cat = "TCG_ETB"
 
     # Konsole
     if not cat:
-        if "ps vita" in t_f or "psvita" in t_f or "vita slim" in t_f or "ps vita 2000" in t_f:
+        if "ps vita" in t_f or "psvita" in t_f or "vita slim" in t_f:
             cat = "VITA"
-        elif "psp" in t_f or "playstation portable" in t_f or "play station portable" in t_f:
+        elif "psp" in t_f or "playstation portable" in t_f:
             cat = "PSP"
         elif "new 3ds" in t_f or "new3ds" in t_f:
             cat = "3DS"
@@ -386,31 +466,24 @@ def is_interesting_item(title, price):
             cat = "RETRO"
 
     # --- SONY AUDIO & APPLE AUDIO ---
-        if not cat:
-            is_sony = "sony" in t_f
-            is_phone = any(x in t_f for x in [
-                "telefon", "smartfon", "smartphone", "phone", "mobile",
-                "xperia", "android", "iphone",
-                "komórkowy", "komorkowy",
-                "mobilny", "mobiltelefon",
-                "puhelin",
-                "telefoon",
-                "handy",
-                "téléphone",
-                "telefono",
-            ])
-
-            if is_sony and not is_phone and any(x in t_f for x in ["walkman", "wm-"]):
-                cat = "WALKMAN"
-            elif is_sony and not is_phone and any(x in t_f for x in ["discman", "d-e", "d-j", "d-ej", "d-ne", "d-nf", "d-nx", "cd player"]):
-                cat = "DISCMAN"
-            elif "ipod nano" in t_f or ("ipod" in t_f and "nano" in t_f):
-                cat = "IPOD_NANO"
+    if not cat:
+        is_sony = "sony" in t_f
+        is_phone = any(x in t_f for x in [
+            "telefon", "smartfon", "smartphone", "phone", "mobile",
+            "xperia", "android", "iphone",
+            "komórkowy", "komorkowy", "mobilny", "mobiltelefon",
+            "puhelin", "telefoon", "handy", "téléphone", "telefono",
+        ])
+        if is_sony and not is_phone and any(x in t_f for x in ["walkman", "wm-"]):
+            cat = "WALKMAN"
+        elif is_sony and not is_phone and any(x in t_f for x in ["discman", "d-e", "d-j", "d-ej", "d-ne", "d-nf", "d-nx", "cd player"]):
+            cat = "DISCMAN"
+        elif "ipod nano" in t_f or ("ipod" in t_f and "nano" in t_f):
+            cat = "IPOD_NANO"
 
     if not cat:
         return False, "NO_CAT"
 
-    # --- LIMITY CENOWE ---
     limits = {
         "PSP":           250,
         "VITA":          600,
@@ -462,27 +535,54 @@ def process_item(title, url, price, src):
 # ---------------------------------------------------------------------------
 # ZAPYTANIA
 # ---------------------------------------------------------------------------
-QUERIES = [
+
+# Vinted — wielojęzyczne, ale bez duplikatów (nazwy konsol są uniwersalne)
+QUERIES_VINTED = [
+    # PSP — "psp" działa wszędzie, modele też
+    "psp", "psp 1000", "psp 2000", "psp 3000",
+    # PS Vita — nazwa uniwersalna
+    "ps vita", "ps vita slim", "psvita",
+    # 3DS — nazwa universalna, tylko "new" może być w różnych językach
+    "nintendo 3ds", "new 3ds", "new 3ds xl",
+    # 2DS
+    "nintendo 2ds", "new 2ds xl",
+    # DS — "ds lite" i "dsi" są uniwersalne
+    "nintendo ds", "ds lite", "nintendo dsi",
+    # Game Boy — nazwy uniwersalne
+    "game boy advance", "gba sp", "game boy color", "game boy pocket", "game boy",
+    # Pokémon TCG — angielskie nazwy produktów są uniwersalne na całym Vinted
+    "pokemon elite trainer box", "pokemon booster box",
+    "pokemon etb", "pokemon bundle", "pokemon tin",
+    "first partner pack", "pokemon collection box",
+    # Sony Walkman — "sony walkman" uniwersalne, dodajemy tylko lokalne słowa kluczowe
+    "sony walkman", "walkman cassette", "walkman kaseta",
+    "sony wm-",
+    # Sony Discman — "sony discman" uniwersalne
+    "sony discman", "sony portable cd player",
+    # iPod — uniwersalne
+    "ipod nano",
+]
+
+# OLX + Allegro Lokalnie — tylko polski, bo to lokalne serwisy
+QUERIES_PL = [
     # PSP
     "psp konsola", "psp 1000", "psp 2000", "psp 3000",
     # PS Vita
     "ps vita", "ps vita slim",
-    # 3DS / 2DS
+    # 3DS
     "nintendo 3ds", "new 3ds", "new 2ds xl", "nintendo 2ds",
-    # DS klasyczne
+    # DS
     "nintendo ds konsola", "ds lite", "dsi konsola",
     # Game Boy
     "gameboy advance", "gba sp", "gameboy color", "game boy",
-    # Pokémon TCG — tylko sealed produkty
+    # Pokémon TCG
     "pokemon etb", "pokemon elite trainer box",
     "pokemon booster box", "pokemon display",
-    "pokemon bundle", "pokemon booster bundle",
-    "first partner pack",
+    "pokemon bundle", "first partner pack",
     "pokemon kolekcja sealed", "pokemon zestaw sealed",
     # Sony Audio
-    "sony walkman", "walkman kaseta", "sony wm-",
-    "sony discman", "discman cd",
-    # Apple Audio
+    "sony walkman", "walkman kaseta", "sony discman",
+    # iPod
     "ipod nano",
 ]
 
@@ -490,7 +590,7 @@ QUERIES = [
 # GŁÓWNA PĘTLA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v43.3 | Walkman/Discman tylko Sony")
+    log_debug("🚀 SNIPER v43.7 | osobne listy zapytań, ~5 min cykl")
 
     vinted_init()
 
@@ -500,14 +600,29 @@ if __name__ == "__main__":
             time.sleep(1800)
             continue
 
-        random.shuffle(QUERIES)
-        for q in QUERIES:
-            scrape_olx(q)
-            time.sleep(2)
-            scrape_vinted(q)
+        v_list = QUERIES_VINTED.copy()
+        pl_list = QUERIES_PL.copy()
+        random.shuffle(v_list)
+        random.shuffle(pl_list)
+
+        # Przeplatamy Vinted z OLX/Allegro żeby nie hammować jednego serwisu
+        for i, q_v in enumerate(v_list):
+            scrape_vinted(q_v)
             time.sleep(3)
-            scrape_allegro_lokalnie(q)
-            time.sleep(random.randint(4, 8))
+
+            if i < len(pl_list):
+                q_pl = pl_list[i]
+                scrape_olx(q_pl)
+                time.sleep(2)
+                scrape_allegro_lokalnie(q_pl)
+                time.sleep(random.randint(3, 5))
+
+        # Pozostałe polskie zapytania których nie obsłużyliśmy w pętli powyżej
+        for q_pl in pl_list[len(v_list):]:
+            scrape_olx(q_pl)
+            time.sleep(2)
+            scrape_allegro_lokalnie(q_pl)
+            time.sleep(random.randint(3, 5))
 
         if IS_FIRST_RUN:
             IS_FIRST_RUN = False
