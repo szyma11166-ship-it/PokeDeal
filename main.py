@@ -238,7 +238,7 @@ def is_interesting_item(title, price):
         "płyta", "plyta", "plakat", "ink",
         "samo pudełko", "samo pudelko", "samo opakowanie",
         "tylko opakowanie", "bez konsoli", "bez gry",
-        "r4i", "r4",
+        "r4i", "r4", "bateria", "battery", "shell",
         "akryl", "spelstall",
         "luźne karty", "luzne karty",
         "pojedyncza karta", "pojedyncze karty",
@@ -317,7 +317,7 @@ def is_interesting_item(title, price):
         elif "game boy" in t_f or "gameboy" in t_f or "dmg" in t_f:
             cat = "RETRO"
 
-    # --- AUDIO ---
+    # --- SONY AUDIO & APPLE AUDIO ---
     if not cat:
         is_sony = "sony" in t_f
         # Walkman: odtwarzacz kaset/MD/MP3 marki Sony
@@ -326,11 +326,7 @@ def is_interesting_item(title, price):
         # Discman: przenośny odtwarzacz CD marki Sony (D-xxx lub discman)
         elif is_sony and any(x in t_f for x in ["discman", "d-e", "d-j", "d-ej", "d-ne", "d-nf", "d-nx", "cd player"]):
             cat = "DISCMAN"
-        # Frazy bez "sony" — gdy nazwa produktu jest wystarczająca
-        elif "walkman" in t_f:
-            cat = "WALKMAN"
-        elif "discman" in t_f:
-            cat = "DISCMAN"
+        # Walkman/Discman bez Sony w tytule — ignoruj
         # iPod nano
         elif "ipod nano" in t_f or ("ipod" in t_f and "nano" in t_f):
             cat = "IPOD_NANO"
@@ -418,7 +414,7 @@ QUERIES = [
 # GŁÓWNA PĘTLA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v43.2 | +iPod nano (do 150 zł)")
+    log_debug("🚀 SNIPER v43.3 | Walkman/Discman tylko Sony")
 
     vinted_init()
 
