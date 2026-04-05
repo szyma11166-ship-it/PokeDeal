@@ -182,14 +182,12 @@ def scrape_allegro_lokalnie(query):
 # FILTRY
 # ---------------------------------------------------------------------------
 
-# Słowa kluczowe konsol — używane w wielu filtrach
 CONSOLE_WORDS = [
     "vita", "psp", "konsola", "zestaw", "console",
     "3ds", "2ds", "dsi", "ds lite", "gameboy", "game boy", "gba",
     "nintendo", "playstation",
 ]
 
-# Akcesoria które są OK w zestawie z konsolą, ale nie jako samodzielna oferta
 ACCESSORY_STANDALONE = [
     "ładowarka", "ladowarka", "kabel", "zasilacz", "adapter",
     "bateria", "etui", "obudowa", "rysik", "pokrowiec",
@@ -197,12 +195,10 @@ ACCESSORY_STANDALONE = [
 ]
 
 def has_console(title):
-    """Czy tytuł zawiera nazwę konsoli?"""
     t = title.lower()
     return any(w in t for w in CONSOLE_WORDS)
 
 def is_standalone_accessory(title):
-    """Blokuj akcesorium tylko gdy nie ma konsoli w tytule."""
     t = title.lower()
     if any(x in t for x in ACCESSORY_STANDALONE):
         if not has_console(t):
@@ -210,14 +206,12 @@ def is_standalone_accessory(title):
     return False
 
 def is_standalone_memory_card(title):
-    """Blokuj kartę pamięci tylko gdy nie ma konsoli w tytule."""
     t = title.lower()
     if any(x in t for x in ["karta pamięci", "memory card", "karta ms", "karta sd"]):
         if not has_console(t):
             return True
     return False
 
-# Stare ACCESSORY_PHRASES zostawiamy jako dodatkową warstwę dla "sam/sama/tylko"
 ACCESSORY_PHRASES = [
     r"\bsam(a|e|ego|emu|ą)?\s+(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|ekran|rysik|case|pokrowiec)",
     r"\b(tylko|sam(a)?)\s+(kabel|ładowark|zasilacz|adapter|bater|etui|obudow|rysik)",
@@ -237,21 +231,15 @@ def is_accessory_phrase(title):
 def is_interesting_item(title, price):
     t_f = title.lower()
 
-    # --- TWARDE ŚMIECI — nigdy nie są OK niezależnie od kontekstu ---
+    # --- TWARDE ŚMIECI ---
     trash_absolute = [
-        # Klony i chińszczyzna
         "r36s", "miyoo", "anbernic", "powkiddy",
-        # Media i nośniki
         "bajka", "film", "dvd", "książka", "komiks",
         "płyta", "plyta", "plakat", "ink",
-        # Puste opakowania
         "samo pudełko", "samo pudelko", "samo opakowanie",
         "tylko opakowanie", "bez konsoli", "bez gry",
-        # Mody/flashcarty
         "r4i", "r4",
-        # Akcesoria typowo PSP/Vita bez wartości kolekcjonerskiej
         "akryl", "spelstall",
-        # Pokemon — luźne/pojedyncze karty
         "luźne karty", "luzne karty",
         "pojedyncza karta", "pojedyncze karty",
         "karty pokemon", "karta pokemon",
@@ -261,7 +249,7 @@ def is_interesting_item(title, price):
     if any(x in t_f for x in trash_absolute):
         return False, "TRASH"
 
-    # --- AKCESORIA STANDALONE (OK w zestawie z konsolą) ---
+    # --- AKCESORIA STANDALONE ---
     if is_accessory_phrase(t_f):
         return False, "ACCESSORY"
 
@@ -273,7 +261,6 @@ def is_interesting_item(title, price):
         return False, "MEMORY_CARD"
 
     # --- FILTR POJEDYNCZEJ GRY ---
-    # Blokuj pojedynczą grę, przepuść zestawy i konsole z grą
     has_game_word = bool(re.search(r'\b(gra|game)\b', t_f))
     has_console_word = any(x in t_f for x in [
         "konsola", "console", "boy", "gear", "station", "cube",
@@ -290,7 +277,7 @@ def is_interesting_item(title, price):
     # --- KATEGORYZACJA ---
     cat = None
 
-    # Pokémon TCG — od najbardziej szczegółowych
+    # Pokémon TCG
     if "pokemon" in t_f or "pokémon" in t_f:
         if "first partner" in t_f:
             cat = "FIRST_PARTNER"
@@ -302,9 +289,8 @@ def is_interesting_item(title, price):
             cat = "TCG_BUNDLE"
         elif any(x in t_f for x in ["kolekcja", "zestaw kart", "zestaw boosterów", "sealed"]):
             cat = "TCG_ETB"
-        # Samo "karty" / "pokemon karty" → NO_CAT (odrzut)
 
-    # Konsole — od bardziej do mniej szczegółowych
+    # Konsole
     if not cat:
         if "ps vita" in t_f or "psvita" in t_f or "vita slim" in t_f or "ps vita 2000" in t_f:
             cat = "VITA"
@@ -331,6 +317,24 @@ def is_interesting_item(title, price):
         elif "game boy" in t_f or "gameboy" in t_f or "dmg" in t_f:
             cat = "RETRO"
 
+    # --- AUDIO ---
+    if not cat:
+        is_sony = "sony" in t_f
+        # Walkman: odtwarzacz kaset/MD/MP3 marki Sony
+        if is_sony and any(x in t_f for x in ["walkman", "wm-"]):
+            cat = "WALKMAN"
+        # Discman: przenośny odtwarzacz CD marki Sony (D-xxx lub discman)
+        elif is_sony and any(x in t_f for x in ["discman", "d-e", "d-j", "d-ej", "d-ne", "d-nf", "d-nx", "cd player"]):
+            cat = "DISCMAN"
+        # Frazy bez "sony" — gdy nazwa produktu jest wystarczająca
+        elif "walkman" in t_f:
+            cat = "WALKMAN"
+        elif "discman" in t_f:
+            cat = "DISCMAN"
+        # iPod nano
+        elif "ipod nano" in t_f or ("ipod" in t_f and "nano" in t_f):
+            cat = "IPOD_NANO"
+
     if not cat:
         return False, "NO_CAT"
 
@@ -346,6 +350,9 @@ def is_interesting_item(title, price):
         "TCG_BB":        700,
         "TCG_BUNDLE":    160,
         "FIRST_PARTNER": 150,
+        "WALKMAN":       500,
+        "DISCMAN":       100,
+        "IPOD_NANO":     150,
     }
 
     if 30 < price <= limits.get(cat, 1000):
@@ -400,13 +407,18 @@ QUERIES = [
     "pokemon bundle", "pokemon booster bundle",
     "first partner pack",
     "pokemon kolekcja sealed", "pokemon zestaw sealed",
+    # Sony Audio
+    "sony walkman", "walkman kaseta", "sony wm-",
+    "sony discman", "discman cd",
+    # Apple Audio
+    "ipod nano",
 ]
 
 # ---------------------------------------------------------------------------
 # GŁÓWNA PĘTLA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v43.0 | Inteligentne filtry akcesoriów — OK w zestawie z konsolą")
+    log_debug("🚀 SNIPER v43.2 | +iPod nano (do 150 zł)")
 
     vinted_init()
 
