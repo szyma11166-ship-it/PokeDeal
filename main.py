@@ -371,7 +371,7 @@ def is_interesting_item(title, price):
         "acrylic stand", "acrylic case", "acrylic display",
 
         # --- AKCESORIA ELEKTRONICZNE ---
-        "r4i", "r4", "bateria", "battery",
+        "r4i", "r4", "bateria", "battery", "w595",
 
         # --- POKÉMON TCG: LUZEM / SINGLE ---
         "luźne karty", "luzne karty",
