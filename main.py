@@ -156,9 +156,9 @@ POKEMON_GAMES = ["silver", "gold", "blue", "red", "yellow", "crystal", "ruby", "
 
 # Prekompilacja Regex dla wydajności
 ACCESSORY_PATTERNS = [
-    re.compile(r"\bsam(a|e|ego|emu|ą)?\s+(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|ekran|rysik|case|pokrowiec)", re.I),
-    re.compile(r"\b(tylko|sam(a)?)\s+(kabel|ładowark|zasilacz|adapter|bater|etui|obudow|rysik)", re.I),
-    re.compile(r"^(kabel|ładowarka|zasilacz|adapter|bateria|etui|obudowa|rysik|pokrowiec|case|stojak|uchwyt|charger|cable)\b", re.I),
+    re.compile(r"\bsam(a|e|ego|emu|ą)?\s+(kabel|ładowarka|zasilacz|adapter|bateria|etui|pudelko|lego|obudowa|ekran|rysik|case|pokrowiec)", re.I),
+    re.compile(r"\b(tylko|sam(a)?)\s+(kabel|ładowark|zasilacz|adapter|pudelko|lego|bater|etui|obudow|rysik)", re.I),
+    re.compile(r"^(kabel|ładowarka|zasilacz|adapter|bateria|etui|pudelko|lego|obudowa|rysik|pokrowiec|case|stojak|uchwyt|charger|cable)\b", re.I),
     re.compile(r"\b(only|just|nur|alleen|vain|endast)\s+(the\s+)?(charger|cable|adapter|stylus|case|stand|ladekabel|ladegerät)", re.I),
 ]
 
@@ -167,7 +167,7 @@ def is_interesting_item(title, price):
     
     # 1. Blokada śmieci i akcesoriów
     if any(p.search(t_f) for p in ACCESSORY_PATTERNS): return False, "ACC"
-    if any(x in t_f for x in ["szkło hartowane", "folia", "case", "etui", "pudełko", "obudowa", "replacement shell", "r36s", "miyoo", "anbernic"]):
+    if any(x in t_f for x in ["szkło hartowane", "folia", "case", "etui", "obudowa", "replacement shell", "r36s", "miyoo", "anbernic"]):
         if not any(c in t_f for c in ["konsola", "zestaw"]): return False, "TRASH"
 
     # 2. Blokada gier Pokemon (Silver/Gold itd.) CHYBA ŻE jest w zestawie z konsolą
