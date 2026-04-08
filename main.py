@@ -356,7 +356,7 @@ def is_interesting_item(title, price):
         "RETRO":   (60, 300),
         "WALKMAN": (60, 100),
     }
-    lo, hi = limits.get(hw_cat, (30, 1000))
+    lo, hi = limits.get(hw_cat, (40, 1000))
     if lo <= price <= hi: return True, hw_cat
     return False, "PRICE"
 
