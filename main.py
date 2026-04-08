@@ -14,7 +14,7 @@ HISTORY_FILE = "sent_history.txt"
 
 SENT_HASHES = set()
 SENT_URLS = set()
-SENT_IDS = set()
+SENT_IDS = set()  # Vinted item ID + OLX offer ID
 IS_FIRST_RUN = True
 VINTED_LAST_INIT = 0
 VINTED_INIT_INTERVAL = 2 * 3600
@@ -32,11 +32,10 @@ if os.path.exists(HISTORY_FILE):
 
 VINTED_SESSION = curl_requests.Session(impersonate="chrome120")
 VINTED_SESSION.headers.update({
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "pl-PL,pl;q=0.9",
+    "Referer": "https://www.vinted.pl/catalog",
+    "Origin": "https://www.vinted.pl",
 })
 
 OLX_SESSION = requests.Session()
@@ -66,70 +65,23 @@ def append_to_history(val):
         f.write(f"{val}\n")
 
 # ---------------------------------------------------------------------------
-# INICJALIZACJA SESJI VINTED
-# Krok 1: strona główna (DataDome ustawia pierwsze cookies)
-# Krok 2: strona katalogu (DataDome weryfikuje i ustawia właściwe cookies)
-# Krok 3: sprawdzenie czy datadome cookie jest obecne
+# INICJALIZACJA SESJI VINTED — prosta wersja (sprawdzona)
 # ---------------------------------------------------------------------------
 def vinted_init():
     global VINTED_LAST_INIT
-    browsers = ["chrome120", "chrome116", "safari15_5", "edge101"]
-    chosen = random.choice(browsers)
-
     try:
-        log_debug(f"🔄 Inicjalizuję sesję Vinted ({chosen})...")
-
-        # Nowa sesja z losowym impersonation
-        global VINTED_SESSION
-        VINTED_SESSION = curl_requests.Session(impersonate=chosen)
-        VINTED_SESSION.headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-        })
-
-        # Krok 1: strona główna
-        r1 = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
-        log_debug(f"  Step1 (homepage): {r1.status_code}")
-        if r1.status_code != 200:
-            log_debug(f"💥 Vinted init failed at homepage: {r1.status_code}")
-            return False
-        time.sleep(random.uniform(3, 6))
-
-        # Krok 2: katalog — DataDome weryfikuje zachowanie przeglądarki
-        VINTED_SESSION.headers.update({
-            "Referer": "https://www.vinted.pl/",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        })
-        r2 = VINTED_SESSION.get("https://www.vinted.pl/catalog", timeout=20)
-        log_debug(f"  Step2 (catalog): {r2.status_code}")
-        if r2.status_code != 200:
-            log_debug(f"💥 Vinted init failed at catalog: {r2.status_code}")
-            return False
-        time.sleep(random.uniform(2, 4))
-
-        # Krok 3: sprawdź czy mamy datadome cookie
-        dd_cookie = VINTED_SESSION.cookies.get("datadome")
-        if not dd_cookie:
-            log_debug("⚠️ Brak datadome cookie — sesja może być niestabilna")
-        else:
-            log_debug(f"✅ DataDome cookie present")
-
-        # Ustaw nagłówki API po udanej inicjalizacji
-        VINTED_SESSION.headers.update({
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "pl-PL,pl;q=0.9",
-            "Referer": "https://www.vinted.pl/catalog",
-            "Origin": "https://www.vinted.pl",
-            "X-Requested-With": "XMLHttpRequest",
-        })
-
-        log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
-        VINTED_LAST_INIT = time.time()
-        return True
-
+        log_debug("🔄 Inicjalizuję sesję Vinted...")
+        browsers = ["chrome120", "chrome116", "safari15_5", "edge101"]
+        chosen = random.choice(browsers)
+        VINTED_SESSION.impersonate = chosen
+        VINTED_SESSION.cookies.clear()
+        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        if r.status_code == 200:
+            log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
+            VINTED_LAST_INIT = time.time()
+            return True
+        log_debug(f"💥 Vinted init status: {r.status_code}")
+        return False
     except Exception as e:
         log_debug(f"💥 Błąd init Vinted: {e}")
         return False
@@ -151,10 +103,8 @@ def scrape_vinted(query):
 
         if r.status_code in [401, 403]:
             log_debug(f"🔄 Vinted {r.status_code} na [{query}] — reset sesji...")
-            # Dłuższe czekanie przed retry — DataDome rate limit
-            time.sleep(random.uniform(30, 60))
+            time.sleep(random.uniform(10, 20))
             if vinted_init():
-                time.sleep(random.uniform(3, 6))
                 r = VINTED_SESSION.get(url, timeout=20)
             else:
                 return
@@ -187,7 +137,10 @@ def scrape_olx(query):
             new_count = 0
             for o in r.json().get('data', []):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
-                if p_val and process_item(o['title'], o['url'], float(p_val), "OLX"): new_count += 1
+                if not p_val: continue
+                # Deduplikacja po OLX offer ID (unikalny niezależnie od URL)
+                olx_id = f"olx_{o.get('id', '')}"
+                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id): new_count += 1
             log_debug(f"✅ OLX [{query}]: nowych {new_count}")
     except Exception as e:
         log_debug(f"💥 Błąd OLX: {e}")
@@ -220,46 +173,26 @@ def scrape_allegro_lokalnie(query):
 # FILTRY
 # ---------------------------------------------------------------------------
 
-# --- CZĘŚCI, KOMPONENTY, AKCESORIA — blokada absolutna ---
+# --- CZĘŚCI I AKCESORIA — blokada absolutna ---
 PARTS_RE = re.compile(r"""
     \b(
-        # Ekrany i optyka
-        ekran|screen|lcd|display|obiektyw|lens|
-
-        # Obudowy i części mechaniczne
+        ekran|screen|lcd|
         obudow|shell|housing|casing|faceplate|
-
-        # Kable i zasilanie
-        kabel|cable|przewód|ładowark|charger|zasilacz|
-        power\s*supply|adapter|
-
-        # Baterie
-        bateria|battery|akumulator|
-
-        # Akcesoria do noszenia/przechowywania
-        etui|pokrowiec|torb|bag|
-
-        # Narzędzia montażowe i rysiki
         rysik|stylus|
-
-        # Ochrona ekranu
+        kabel|cable|przewód|
+        ładowark|charger|zasilacz|power\s*supply|adapter|
+        bateria|battery|akumulator|
+        etui|pokrowiec|torb|bag|
         szkło\s*hartowane|screen\s*protector|folia|
-
-        # Elektronika wewnętrzna
-        przyciski|buttons|trigger|głośnik|speaker|
+        przyciski|buttons|trigger|
+        głośnik|speaker|
         taśm|ribbon|flex|
-
-        # Akcesoria Walkman/audio
-        remote\s*control|pilot|telecommand|strap|carry\s*case|
+        obiektyw|lens|
+        remote\s*control|pilot\b|telecommand|
         headphones?|słuchawk|earphones?|
-
-        # Akryl i gablotki (Pokemon TCG)
-        akryl|acrylic|gablotk|display\s*case|card\s*case|card\s*holder|
-        sleeve|koszulk|
-
-        # Dyski MiniDisc (bez odtwarzacza)
-        \bmd\s*disc|\bminidisc\s*disc|recordable\s*md|blank\s*md|
-        kaseta\s*md|taśma\s*md
+        akryl|acrylic|gablotk|card\s*case|card\s*holder|
+        \bsleeve\b|koszulk|
+        recordable\s*md|blank\s*md|kaseta\s*md|taśma\s*md
     )\b
 """, re.I | re.VERBOSE)
 
@@ -280,13 +213,12 @@ BUNDLE_RE = re.compile(r"""
         \d+\s*gier|\d+\s*gry|\d+\s*sztuk|\d+\s*szt\b|
         \d+\s*games?|
         hry\s*\d|\d+\s*hry|
-        gry\s*na|gry\s*do|kilka\s*gier|pare\s*gier|parę\s*gier|
-        pack(?!\s*art)   # "pack" ale nie "pack art"
+        gry\s*na|gry\s*do|kilka\s*gier|par[eę]\s*gier|
+        pack(?!\s*art)
     )\b
 """, re.I | re.VERBOSE)
 
-# --- KONSOLA JAKO GŁÓWNY PRZEDMIOT (nie gra) ---
-# Jeśli tytuł zawiera te frazy — to oferta konsoli, nie gry
+# --- KONSOLA JAKO GŁÓWNY PRZEDMIOT ---
 CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|
@@ -301,6 +233,7 @@ CONSOLE_MAIN_RE = re.compile(r"""
 
 # ---------------------------------------------------------------------------
 # TCG — KLASYFIKACJA POKEMON SEALED (tylko angielskie)
+# WAŻNE: sprawdzane PRZED PARTS_RE żeby ETB nie było blokowane przez "box"
 # ---------------------------------------------------------------------------
 def classify_tcg(t_f):
     is_pkmn = "pokemon" in t_f or "pokémon" in t_f
@@ -311,7 +244,7 @@ def classify_tcg(t_f):
     if JAPANESE_RE.search(t_f):
         return None
 
-    # Musi zawierać sealed keyword — bez tego odrzuć
+    # Musi zawierać sealed keyword
     sealed_keywords = [
         "etb", "elite trainer", "booster box", "display", "bundle",
         "tin", "blister", "first partner", "collection box",
@@ -324,11 +257,11 @@ def classify_tcg(t_f):
     if "etb" in t_f or "elite trainer" in t_f:
         return ("TCG_ETB", 280)
 
-    # Booster Box / Display (36 boosterów)
+    # Booster Box / Display
     if "booster box" in t_f or ("display" in t_f and "pokemon" in t_f):
         return ("TCG_BOX", 600)
 
-    # First Partner Illustration Collection
+    # First Partner
     if "first partner" in t_f:
         return ("TCG_FIRST_PARTNER", 150)
 
@@ -336,7 +269,7 @@ def classify_tcg(t_f):
     if "bundle" in t_f:
         return ("TCG_BUNDLE", 150)
 
-    # Mini Tin (2 boostery) — sprawdź przed zwykłym tinem
+    # Mini Tin (2 boostery) — przed zwykłym tinem
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
         return ("TCG_MINI_TIN", 50)
 
@@ -348,7 +281,7 @@ def classify_tcg(t_f):
     if "blister" in t_f:
         return ("TCG_BLISTER", 70)
 
-    # Pojedynczy booster pack (angielski)
+    # Pojedynczy booster
     if "booster pack" in t_f or (
         "booster" in t_f and not any(x in t_f for x in ["box", "bundle", "display"])
     ):
@@ -366,11 +299,7 @@ def is_interesting_item(title, price):
     if CLONE_RE.search(t_f):
         return False, "CLONE"
 
-    # 2. Części/akcesoria — absolutna blokada (bez wyjątków)
-    if PARTS_RE.search(t_f):
-        return False, "PART"
-
-    # 3. Pokemon TCG
+    # 2. Pokemon TCG — PRZED PARTS_RE (żeby ETB/box nie był blokowany)
     if "pokemon" in t_f or "pokémon" in t_f:
         tcg = classify_tcg(t_f)
         if tcg:
@@ -378,7 +307,7 @@ def is_interesting_item(title, price):
             if 10 <= price <= max_price:
                 return True, subcat
             return False, "PRICE"
-        # Pokemon ale nie sealed TCG — musi mieć nazwę konsoli żeby przejść
+        # Pokemon ale nie sealed — musi mieć konsolę
         has_console = any(c in t_f for c in [
             "vita", "psp", "3ds", "ds lite", "dsi", "nintendo ds",
             "gameboy", "gba", "gbc", "game boy"
@@ -386,14 +315,11 @@ def is_interesting_item(title, price):
         if not has_console:
             return False, "PKMN_JUNK"
 
-    # 4. Blokada pojedynczych gier — LOGIKA ODWRÓCONA
-    # Jeśli tytuł zawiera nazwę konsoli jako główny przedmiot (PSP Fat, DS Lite itp.)
-    # to jest to oferta konsoli — przepuść do kategoryzacji
-    # Jeśli NIE ma console_main ale jest w kategorii sprzętowej —
-    # wymagamy BUNDLE_RE żeby przepuścić
-    is_console_main = bool(CONSOLE_MAIN_RE.search(t_f))
+    # 3. Części/akcesoria — absolutna blokada
+    if PARTS_RE.search(t_f):
+        return False, "PART"
 
-    # Wykryj kategorię sprzętową
+    # 4. Wykryj kategorię sprzętową
     hw_cat = None
     if "vita" in t_f: hw_cat = "VITA"
     elif "psp" in t_f: hw_cat = "PSP"
@@ -401,25 +327,24 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
-    if hw_cat and not is_console_main:
-        # Tytuł ma nazwę platformy ale nie jest wyraźnie konsolą
-        # Musi mieć bundle signal żeby przejść (zestaw gier)
-        # LUB musi zawierać słowo "konsola"/"console"
-        if "konsola" not in t_f and "console" not in t_f:
+    # 5. Blokada pojedynczych gier
+    # Jeśli mamy kategorię sprzętową ale tytuł nie wygląda jak konsola — wymagamy bundle
+    if hw_cat:
+        is_console_main = bool(CONSOLE_MAIN_RE.search(t_f))
+        has_konsola = "konsola" in t_f or "console" in t_f
+        if not is_console_main and not has_konsola:
             if not BUNDLE_RE.search(t_f):
                 return False, "SINGLE_GAME"
 
-    # 5. Kategoryzacja
-    cat = hw_cat  # użyj już wykrytej kategorii sprzętowej
-
-    if not cat:
+    # 6. Walkman
+    if not hw_cat:
         if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
             if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
-            cat = "WALKMAN"
+            hw_cat = "WALKMAN"
 
-    if not cat: return False, "NO_CAT"
+    if not hw_cat: return False, "NO_CAT"
 
-    # 6. Limity cenowe
+    # 7. Limity cenowe
     limits = {
         "PSP":     (60, 250),
         "VITA":    (60, 600),
@@ -428,8 +353,8 @@ def is_interesting_item(title, price):
         "RETRO":   (60, 300),
         "WALKMAN": (60, 100),
     }
-    lo, hi = limits.get(cat, (60, 1000))
-    if lo <= price <= hi: return True, cat
+    lo, hi = limits.get(hw_cat, (60, 1000))
+    if lo <= price <= hi: return True, hw_cat
     return False, "PRICE"
 
 # ---------------------------------------------------------------------------
@@ -445,6 +370,7 @@ def process_item(title, url, price, src, item_id=None):
     clean_url = url.split("?")[0].rstrip("/")
     content_hash = hashlib.md5(f"{title[:40].lower().strip()}_{int(price)}".encode()).hexdigest()
 
+    # Deduplication: ID (Vinted/OLX), URL, content hash
     if item_id and item_id in SENT_IDS: return False
     if clean_url in SENT_URLS or content_hash in SENT_HASHES: return False
 
@@ -465,11 +391,10 @@ def process_item(title, url, price, src, item_id=None):
     return False
 
 # ---------------------------------------------------------------------------
-# PĘTLA GŁÓWNA
-# Vinted i OLX/Allegro mają osobne iteratory — eliminuje duplikaty OLX
+# PĘTLA GŁÓWNA — Vinted i OLX/Allegro osobne pętle
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v48.0 | Vinted Fix + OLX Dedup + Game Filter + Acrylic/Walkman Block")
+    log_debug("🚀 SNIPER v49.0 | OLX ID Dedup + TCG Fix + Stary Vinted Init")
     vinted_init()
 
     Q_V = [
@@ -516,7 +441,7 @@ if __name__ == "__main__":
             scrape_vinted(q_v)
             time.sleep(random.uniform(4, 8))
 
-        # OLX + Allegro — osobna pętla, nie zależna od Vinted
+        # OLX + Allegro — osobna pętla
         for q_pl in pl_list:
             scrape_olx(q_pl)
             time.sleep(random.uniform(2, 4))
@@ -524,5 +449,5 @@ if __name__ == "__main__":
             time.sleep(random.uniform(3, 5))
 
         IS_FIRST_RUN = False
-        log_debug("💤 Przerwa 4 min.")
-        time.sleep(240)
+        log_debug("💤 Przerwa 5 min.")
+        time.sleep(300)
