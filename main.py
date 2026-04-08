@@ -104,7 +104,6 @@ def scrape_vinted(query):
             new_count = 0
             for item in items:
                 item_id = str(item.get("id", ""))
-                # Deduplication po Vinted item ID — eliminuje duplikaty między zapytaniami
                 if item_id and item_id in SENT_IDS:
                     continue
                 title = item.get("title", "")
@@ -155,116 +154,204 @@ def scrape_allegro_lokalnie(query):
 # FILTRY
 # ---------------------------------------------------------------------------
 
-CONSOLE_WORDS = [
-    "vita", "psp", "konsola", "zestaw", "console", "3ds", "2ds", "dsi",
-    "ds lite", "gameboy", "gba", "nintendo", "spelkonsol", "konzole",
-    "konzol", "pelikonsoli", "spielkonsole"
-]
+# --- KOMPONENTY I CZĘŚCI — blokada absolutna ---
+# Nawet jeśli tytuł zawiera nazwę konsoli, te słowa = część = blokada
+PARTS_RE = re.compile(r"""
+    \b(
+        ekran|screen|lcd|display|
+        obudow|shell|housing|casing|faceplate|replacement\s*shell|
+        rysik|stylus|
+        kabel|cable|przewód|
+        ładowark|charger|zasilacz|power\s*supply|adapter|
+        bateria|battery|akumulator|
+        etui|case|pokrowiec|torb|bag|
+        stojak|stand|uchwyt|holder|
+        szkło\s*hartowane|screen\s*protector|folia|
+        przyciski|buttons|trigger|
+        głośnik|speaker|
+        taśm|ribbon|flex|
+        obiektyw|lens
+    )\b
+""", re.I | re.VERBOSE)
 
-POKEMON_GAMES = [
-    "silver", "gold", "blue", "red", "yellow", "crystal", "ruby", "sapphire",
-    "emerald", "fire red", "leaf green", "soul silver", "heart gold",
-    "diamond", "pearl", "platinum", "black", "white"
-]
+# --- KLONY I ŚMIECI ---
+CLONE_RE = re.compile(r"\b(r36s|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+)\b", re.I)
 
-# Słowa sygnalizujące że to ZESTAW gier (whitelist — nie blokujemy)
-BUNDLE_WORDS = [
-    "bundle", "zestaw", "komplet", "lot", "pack", "zestaw gier", "gry x",
-    r"x\d+", r"\d+\s*gier", r"\d+\s*sztuk", r"\d+\s*szt",
-]
-BUNDLE_RE = re.compile("|".join(BUNDLE_WORDS), re.I)
+# --- DYKTAFONY — blokada w kategorii Walkman ---
+DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo)\b", re.I)
 
-# Pojedyncze popularne tytuły gier — sygnał że to single game
-SINGLE_GAME_TITLES = [
-    "fifa", "pes ", "pro evolution", "ufc", "nfs", "need for speed",
-    "god of war", "grand theft", "gta", "minecraft", "call of duty", "cod ",
-    "mortal kombat", "tekken", "street fighter", "assassin", "lego star",
-    "lego batman", "lego marvel", "lego harry", "harry potter", "star wars",
-    "spiderman", "spider-man", "batman", "superman", "iron man",
-    "toy story", "ben 10", "pro cycling", "cycling 20",
-    "sims ", "the sims", "singstar", "guitar hero", "tony hawk",
-    "burnout", "ridge racer", "wipeout", "wipe out", "little big planet",
-    "patapon", "lumines", "medal of honor", "resistance", "killzone",
-    "uncharted", "ratchet", "jak and", "daxter", "crash bandicoot",
-    "sonic ", "mario kart", "super mario", "zelda", "metroid", "kirby",
-    "donkey kong", "pokemon mystery", "pokemon ranger", "pokemon trozei",
-    "brain training", "big brain", "nintendogs", "animal crossing",
-]
-SINGLE_GAME_RE = re.compile("|".join(re.escape(g) for g in SINGLE_GAME_TITLES), re.I)
+# --- JĘZYK JAPOŃSKI — blokada dla TCG ---
+JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed|holo\s*rare\s*jp)\b", re.I)
 
-# Słowa kluczowe dyktafonów i voice recorderów — blokada w kategorii Walkman
-DICTAPHONE_WORDS = [
-    "dyktafon", "voice recorder", "tcm-", "tcm ", "icd-", "recorder",
-    "nagrywarka", "voice memo",
-]
-DICTAPHONE_RE = re.compile("|".join(re.escape(d) for d in DICTAPHONE_WORDS), re.I)
+# --- BUNDLE KONSOL/GIER — whitelist (2+ sztuki) ---
+# Tytuł musi zawierać wyraźny sygnał zestawu
+BUNDLE_RE = re.compile(r"""
+    \b(
+        bundle|zestaw|komplet|lot|pack|
+        x[2-9]|[2-9]\s*x\s*\w|
+        \d+\s*gier|\d+\s*gry|\d+\s*sztuk|\d+\s*szt|
+        hry\s*\d|\d+\s*hry|          # słowackie/czeskie "hry" = gry
+        [2-9]\s*games?|
+        collection(?!\s*illustration)  # "collection" ale nie "illustration collection" (to TCG)
+    )\b
+""", re.I | re.VERBOSE)
 
-# Akcesoria — blokada
-ACCESSORY_PATTERNS = [
-    re.compile(r"\bsam(a|e|ego|emu|ą)?\s+(kabel|ładowarka|zasilacz|adapter|bateria|etui|pudelko|lego|obudowa|ekran|rysik|case|pokrowiec)", re.I),
-    re.compile(r"\b(tylko|sam(a)?)\s+(kabel|ładowark|zasilacz|adapter|pudelko|lego|bater|etui|obudow|rysik)", re.I),
-    re.compile(r"^(kabel|ładowarka|zasilacz|adapter|bateria|etui|pudelko|lego|obudowa|rysik|pokrowiec|case|stojak|uchwyt|charger|cable)\b", re.I),
-    re.compile(r"\b(only|just|nur|alleen|vain|endast)\s+(the\s+)?(charger|cable|adapter|stylus|case|stand|ladekabel|ladegerät)", re.I),
-]
+# ---------------------------------------------------------------------------
+# TCG — KATEGORYZACJA POKEMON
+# ---------------------------------------------------------------------------
+# Podkategorie z osobnymi limitami cenowymi (tylko angielskie)
+# Kolejność sprawdzania ma znaczenie — od najbardziej specyficznych
 
-def is_bundle(title_lower):
-    """Sprawdza czy tytuł sugeruje zestaw (bundle) gier."""
-    return bool(BUNDLE_RE.search(title_lower))
+def classify_tcg(t_f):
+    """
+    Zwraca (podkategoria, max_cena) lub None jeśli nie pasuje.
+    Tylko angielskie produkty.
+    """
+    is_pkmn = "pokemon" in t_f or "pokémon" in t_f
+    if not is_pkmn:
+        return None
 
-def is_single_game(title_lower):
-    """Sprawdza czy tytuł to prawdopodobnie pojedyncza gra."""
-    return bool(SINGLE_GAME_RE.search(title_lower))
+    # Blokada japońskich
+    if JAPANESE_RE.search(t_f):
+        return None
+
+    # Blokada luźnych kart (single cards)
+    # Jeśli nie ma żadnego ze słów kluczowych produktu sealed — odrzuć
+    sealed_keywords = [
+        "etb", "elite trainer", "booster box", "display", "bundle",
+        "tin", "blister", "first partner", "collection box", "premium collection",
+        "booster pack", "booster"
+    ]
+    if not any(k in t_f for k in sealed_keywords):
+        return None
+
+    # --- ETB (Elite Trainer Box) ---
+    if "etb" in t_f or "elite trainer" in t_f:
+        return ("TCG_ETB", 280)
+
+    # --- BOOSTER BOX / DISPLAY (36 boosterów) ---
+    if "booster box" in t_f or "display" in t_f:
+        return ("TCG_BOX", 600)
+
+    # --- FIRST PARTNER ILLUSTRATION COLLECTION ---
+    if "first partner" in t_f:
+        return ("TCG_FIRST_PARTNER", 150)
+
+    # --- BUNDLE (6 boosterów) ---
+    if "bundle" in t_f:
+        return ("TCG_BUNDLE", 150)
+
+    # --- TIN (4 boostery) ---
+    if "tin" in t_f:
+        # Mini tin (2 boostery) — słowa kluczowe
+        if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
+            return ("TCG_MINI_TIN", 50)
+        return ("TCG_TIN", 100)
+
+    # --- BLISTER (3 boostery) ---
+    if "blister" in t_f:
+        return ("TCG_BLISTER", 70)
+
+    # --- POJEDYNCZY BOOSTER PACK (angielski) ---
+    if "booster pack" in t_f or (
+        "booster" in t_f and not any(x in t_f for x in ["box", "bundle", "display"])
+    ):
+        return ("TCG_BOOSTER", 25)
+
+    return None
+
+# ---------------------------------------------------------------------------
+# GŁÓWNA FUNKCJA FILTROWANIA
+# ---------------------------------------------------------------------------
 
 def is_interesting_item(title, price):
     t_f = title.lower()
 
-    # 1. Blokada akcesoriów
-    if any(p.search(t_f) for p in ACCESSORY_PATTERNS): return False, "ACC"
+    # 1. ABSOLUTNA BLOKADA — klony
+    if CLONE_RE.search(t_f):
+        return False, "CLONE"
 
-    # 2. Blokada klonów i śmieci
-    if any(x in t_f for x in ["szkło hartowane", "folia", "replacement shell", "r36s", "miyoo", "anbernic"]):
-        if not any(c in t_f for c in ["konsola", "zestaw"]): return False, "TRASH"
+    # 2. ABSOLUTNA BLOKADA — części i komponenty
+    #    Nie ma wyjątków — nawet "ekran do Nintendo DS" = część
+    if PARTS_RE.search(t_f):
+        return False, "PART"
 
-    # 3. Blokada pojedynczych gier dla WSZYSTKICH konsol
-    #    Wyjątek: jest słowo "zestaw/bundle/komplet/lot" lub liczba gier
-    if is_single_game(t_f) and not is_bundle(t_f):
-        return False, "SINGLE_GAME"
-
-    # 4. Blokada gier Pokemon (Silver/Gold itd.) chyba że zestaw z konsolą
-    is_pkmn_game = any(f"pokemon {g}" in t_f or f"pokémon {g}" in t_f for g in POKEMON_GAMES)
-    has_cons = any(c in t_f for c in CONSOLE_WORDS)
-    if is_pkmn_game and not has_cons: return False, "PKMN_GAME"
-
-    # 5. Kategoryzacja
-    cat = None
-
-    # Pokemon TCG sealed
+    # 3. POKEMON TCG
     if "pokemon" in t_f or "pokémon" in t_f:
-        if any(x in t_f for x in ["etb", "elite trainer", "display", "booster box", "bundle", "tin", "first partner"]):
-            cat = "TCG"
+        tcg = classify_tcg(t_f)
+        if tcg:
+            subcat, max_price = tcg
+            if 10 <= price <= max_price:
+                return True, subcat
+            return False, "PRICE"
+        # Pokemon ale nie TCG sealed — sprawdź czy to konsola z grą pokemon
+        # Jeśli nie ma słowa kluczowego konsoli — odrzuć
+        if not any(c in t_f for c in ["vita", "psp", "3ds", "ds lite", "dsi", "nintendo ds", "gameboy", "gba", "gbc", "game boy"]):
+            return False, "PKMN_JUNK"
 
-    if not cat:
-        if "vita" in t_f: cat = "VITA"
-        elif "psp" in t_f: cat = "PSP"
-        elif "3ds" in t_f: cat = "3DS"
-        elif "2ds" in t_f: cat = "2DS"
-        elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): cat = "DS"
-        elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): cat = "RETRO"
-        elif any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md walkman"]):
-            # Blokada dyktafonów
-            if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
-            cat = "WALKMAN"
+    # 4. BLOKADA POJEDYNCZYCH GIER
+    #    Przepuszczamy TYLKO jeśli jest wyraźny sygnał bundla 2+ sztuk
+    #    Heurystyka: tytuł wygląda jak gra jeśli NIE zawiera nazwy konsoli jako głównego przedmiotu
+    console_as_main = any(x in t_f for x in [
+        "konsola", "console", "handheld", "zestaw z konsolą",
+        "psp fat", "psp slim", "psp go", "psp street",
+        "vita slim", "vita fat",
+        "3ds xl", "3ds ll", "new 3ds", "old 3ds",
+        "ds lite", "dsi xl",
+        "game boy advance sp", "game boy color", "game boy pocket", "game boy light",
+        "gba sp",
+    ])
+
+    # Jeśli w tytule jest nazwa konsoli ale nie jako główny przedmiot — sprawdź bundle
+    game_signal = any(x in t_f for x in [
+        "gra ", "grę ", "gry ", "grach ", "game ", "games ", "gioco", "spiel",
+        "hry ", "hra ", "igra ",  # słowiańskie
+        "ufc", "fifa", "pes ", "nfs", "gta", "cod ", "minecraft",
+        "god of war", "uncharted", "tekken", "mortal", "street fighter",
+        "assassin", "lego ", "harry potter", "star wars", "batman",
+        "spider", "sonic", "mario", "zelda", "kirby", "pokemon ",
+        "sims ", "singstar", "guitar hero", "tony hawk", "burnout",
+        "ridge racer", "wipeout", "patapon", "lumines", "resistance",
+        "killzone", "ratchet", "daxter", "crash", "jak and",
+        "metal gear", "final fantasy", "dragon quest", "dragon ball",
+        "naruto", "one piece", "bleach", "dbz",
+        "pro cycling", "pro evolution", "need for speed", "call of duty",
+        "medal of honor", "toy story", "ben 10",
+    ])
+
+    if game_signal and not console_as_main:
+        if not BUNDLE_RE.search(t_f):
+            return False, "SINGLE_GAME"
+
+    # 5. KATEGORYZACJA SPRZĘTU
+    cat = None
+    if "vita" in t_f: cat = "VITA"
+    elif "psp" in t_f: cat = "PSP"
+    elif "3ds" in t_f: cat = "3DS"
+    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): cat = "DS"
+    elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): cat = "RETRO"
+    elif any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
+        if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
+        cat = "WALKMAN"
 
     if not cat: return False, "NO_CAT"
 
-    # 6. Limity cenowe (minimum 60 PLN)
+    # 6. LIMITY CENOWE
     limits = {
-        "PSP": 250, "VITA": 600, "3DS": 500, "2DS": 350,
-        "DS": 170, "RETRO": 300, "TCG": 650, "WALKMAN": 400
+        "PSP":     (60, 250),
+        "VITA":    (60, 600),
+        "3DS":     (60, 500),
+        "DS":      (60, 170),
+        "RETRO":   (60, 300),
+        "WALKMAN": (60, 100),  # zmniejszony limit
     }
-
-    if 60 <= price <= limits.get(cat, 1000): return True, cat
+    lo, hi = limits.get(cat, (60, 1000))
+    if lo <= price <= hi: return True, cat
     return False, "PRICE"
+
+# ---------------------------------------------------------------------------
+# PROCESS ITEM
+# ---------------------------------------------------------------------------
 
 def process_item(title, url, price, src, item_id=None):
     global IS_FIRST_RUN
@@ -276,7 +363,7 @@ def process_item(title, url, price, src, item_id=None):
     clean_url = url.split("?")[0].rstrip("/")
     content_hash = hashlib.md5(f"{title[:40].lower().strip()}_{int(price)}".encode()).hexdigest()
 
-    # Deduplication: ID (Vinted), URL, content hash
+    # Deduplication: ID (Vinted), URL (wszystkie źródła), content hash
     if item_id and item_id in SENT_IDS: return False
     if clean_url in SENT_URLS or content_hash in SENT_HASHES: return False
 
@@ -285,28 +372,52 @@ def process_item(title, url, price, src, item_id=None):
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
             send_telegram(msg)
-            log_debug(f"🎯 WYSŁANO: {title[:30]} ({price} zł)")
+            log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
 
         if item_id: SENT_IDS.add(item_id)
         SENT_URLS.add(clean_url)
         SENT_HASHES.add(content_hash)
         append_to_history(clean_url)
         return True
+    else:
+        log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
     return False
 
-# --- PĘTLA ---
+# ---------------------------------------------------------------------------
+# PĘTLA GŁÓWNA
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v46.0 | ID Dedup + Game Filter + Walkman Fix + Dyktafon Block")
+    log_debug("🚀 SNIPER v47.0 | Full Filter Overhaul | No Parts | TCG Subcats | No 2DS")
     vinted_init()
 
     Q_V = [
-        "psp", "ps vita", "nintendo 3ds", "nintendo 2ds", "nintendo ds lite",
-        "game boy advance", "game boy color", "pokemon etb", "pokemon booster box",
-        "sony walkman", "sony discman", "minidisc player"
+        "psp",
+        "ps vita",
+        "nintendo 3ds",
+        "nintendo ds lite",
+        "game boy advance",
+        "game boy color",
+        "pokemon etb",
+        "pokemon booster box",
+        "pokemon bundle",
+        "pokemon tin",
+        "pokemon blister",
+        "sony walkman",
+        "sony discman",
+        "minidisc player",
     ]
     Q_PL = [
-        "psp konsola", "ps vita", "nintendo 3ds", "nintendo 2ds", "nintendo ds",
-        "gameboy advance", "pokemon etb", "sony walkman", "sony discman"
+        "psp konsola",
+        "ps vita konsola",
+        "nintendo 3ds",
+        "nintendo ds lite",
+        "gameboy advance",
+        "gameboy color",
+        "pokemon etb",
+        "pokemon booster box",
+        "sony walkman",
+        "sony discman",
     ]
 
     while True:
