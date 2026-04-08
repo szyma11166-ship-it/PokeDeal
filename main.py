@@ -7,7 +7,6 @@ import urllib.parse
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'): time.tzset()
 
-
 # --- KONFIGURACJA ---
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
@@ -15,7 +14,7 @@ HISTORY_FILE = "sent_history.txt"
 
 SENT_HASHES = set()
 SENT_URLS = set()
-SENT_IDS = set()  # Vinted item ID + OLX offer ID
+SENT_IDS = set()
 IS_FIRST_RUN = True
 VINTED_LAST_INIT = 0
 VINTED_INIT_INTERVAL = 2 * 3600
@@ -53,20 +52,33 @@ def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def send_telegram(msg):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
-            timeout=10
-        )
-    except: pass
+    """Wysyła wiadomość do Telegrama z logowaniem statusu i zabezpieczeniem przed retry."""
+    for attempt in range(2):
+        try:
+            r = requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+                timeout=15
+            )
+            log_debug(f"📨 Telegram status: {r.status_code}")
+            if r.status_code == 200:
+                return True  # sukces — nie próbuj ponownie
+            log_debug(f"💥 Telegram błąd body: {r.text[:100]}")
+        except requests.exceptions.Timeout:
+            log_debug(f"💥 Telegram timeout (próba {attempt+1}/2)")
+            if attempt == 0:
+                time.sleep(5)  # poczekaj chwilę przed ewentualnym retry
+        except Exception as e:
+            log_debug(f"💥 Telegram wyjątek: {e}")
+            break
+    return False
 
 def append_to_history(val):
     with open(HISTORY_FILE, "a") as f:
         f.write(f"{val}\n")
 
 # ---------------------------------------------------------------------------
-# INICJALIZACJA SESJI VINTED — prosta wersja (sprawdzona)
+# INICJALIZACJA SESJI VINTED
 # ---------------------------------------------------------------------------
 def vinted_init():
     global VINTED_LAST_INIT
@@ -139,7 +151,6 @@ def scrape_olx(query):
             for o in r.json().get('data', []):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
                 if not p_val: continue
-                # Deduplikacja po OLX offer ID (unikalny niezależnie od URL)
                 olx_id = f"olx_{o.get('id', '')}"
                 if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id): new_count += 1
             log_debug(f"✅ OLX [{query}]: nowych {new_count}")
@@ -174,7 +185,8 @@ def scrape_allegro_lokalnie(query):
 # FILTRY
 # ---------------------------------------------------------------------------
 
-# --- CZĘŚCI I AKCESORIA — blokada absolutna ---
+# CZĘŚCI — folia tylko jako standalone (nie "nowa folia" przy grach PS)
+# Usunięto "folia" z głównego PARTS_RE — obsługiwana osobno poniżej
 PARTS_RE = re.compile(r"""
     \b(
         ekran|screen|lcd|
@@ -184,7 +196,7 @@ PARTS_RE = re.compile(r"""
         ładowark|charger|zasilacz|power\s*supply|adapter|
         bateria|battery|akumulator|
         etui|pokrowiec|torb|bag|
-        szkło\s*hartowane|screen\s*protector|folia|
+        szkło\s*hartowane|screen\s*protector|
         przyciski|buttons|trigger|
         głośnik|speaker|
         taśm|ribbon|flex|
@@ -197,16 +209,15 @@ PARTS_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# --- KLONY I ŚMIECI ---
-CLONE_RE = re.compile(r"\b(r36s|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+)\b", re.I)
+# Folia jako osobna blokada — tylko jeśli tytuł ZACZYNA SIĘ od "folia" lub zawiera "folia ochronna"
+FOLIA_RE = re.compile(r"(^folia\b|folia\s*ochronna)", re.I)
 
-# --- DYKTAFONY ---
+CLONE_RE = re.compile(r"\b(r36s|r36\b|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+)\b", re.I)
+
 DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo)\b", re.I)
 
-# --- JAPOŃSKI TCG — blokada ---
 JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed)\b", re.I)
 
-# --- BUNDLE — whitelist zestawów 2+ sztuk ---
 BUNDLE_RE = re.compile(r"""
     \b(
         bundle|zestaw|komplet|lot|
@@ -219,12 +230,13 @@ BUNDLE_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# --- KONSOLA JAKO GŁÓWNY PRZEDMIOT ---
+# Rozszerzony CONSOLE_MAIN_RE — łapie "PlayStation Vita", "PS Vita", "Vita Slim" itp.
 CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
-        vita\s*(slim|fat|1000|2000|pch)|
+        playstation\s*vita|ps\s*vita\s*(slim|fat|1000|2000|oled|pch)?|
+        vita\s*(slim|fat|1000|2000|oled|pch)|
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
         ds\s*lite|dsi\s*xl|
         game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
@@ -233,19 +245,16 @@ CONSOLE_MAIN_RE = re.compile(r"""
 """, re.I | re.VERBOSE)
 
 # ---------------------------------------------------------------------------
-# TCG — KLASYFIKACJA POKEMON SEALED (tylko angielskie)
-# WAŻNE: sprawdzane PRZED PARTS_RE żeby ETB nie było blokowane przez "box"
+# TCG — KLASYFIKACJA POKEMON SEALED
 # ---------------------------------------------------------------------------
 def classify_tcg(t_f):
     is_pkmn = "pokemon" in t_f or "pokémon" in t_f
     if not is_pkmn:
         return None
 
-    # Blokada japońskich
     if JAPANESE_RE.search(t_f):
         return None
 
-    # Musi zawierać sealed keyword
     sealed_keywords = [
         "etb", "elite trainer", "booster box", "display", "bundle",
         "tin", "blister", "first partner", "collection box",
@@ -254,35 +263,20 @@ def classify_tcg(t_f):
     if not any(k in t_f for k in sealed_keywords):
         return None
 
-    # ETB
     if "etb" in t_f or "elite trainer" in t_f:
         return ("TCG_ETB", 280)
-
-    # Booster Box / Display
     if "booster box" in t_f or ("display" in t_f and "pokemon" in t_f):
         return ("TCG_BOX", 600)
-
-    # First Partner
     if "first partner" in t_f:
         return ("TCG_FIRST_PARTNER", 150)
-
-    # Bundle (6 boosterów)
     if "bundle" in t_f:
         return ("TCG_BUNDLE", 150)
-
-    # Mini Tin (2 boostery) — przed zwykłym tinem
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
         return ("TCG_MINI_TIN", 50)
-
-    # Tin (4 boostery)
     if "tin" in t_f:
         return ("TCG_TIN", 100)
-
-    # Blister (3 boostery)
     if "blister" in t_f:
         return ("TCG_BLISTER", 70)
-
-    # Pojedynczy booster
     if "booster pack" in t_f or (
         "booster" in t_f and not any(x in t_f for x in ["box", "bundle", "display"])
     ):
@@ -296,11 +290,11 @@ def classify_tcg(t_f):
 def is_interesting_item(title, price):
     t_f = title.lower()
 
-    # 1. Klony — absolutna blokada
+    # 1. Klony
     if CLONE_RE.search(t_f):
         return False, "CLONE"
 
-    # 2. Pokemon TCG — PRZED PARTS_RE (żeby ETB/box nie był blokowany)
+    # 2. Pokemon TCG — PRZED PARTS_RE
     if "pokemon" in t_f or "pokémon" in t_f:
         tcg = classify_tcg(t_f)
         if tcg:
@@ -308,7 +302,6 @@ def is_interesting_item(title, price):
             if 10 <= price <= max_price:
                 return True, subcat
             return False, "PRICE"
-        # Pokemon ale nie sealed — musi mieć konsolę
         has_console = any(c in t_f for c in [
             "vita", "psp", "3ds", "ds lite", "dsi", "nintendo ds",
             "gameboy", "gba", "gbc", "game boy"
@@ -316,20 +309,29 @@ def is_interesting_item(title, price):
         if not has_console:
             return False, "PKMN_JUNK"
 
-    # 3. Części/akcesoria — absolutna blokada
+    # 3. Części/akcesoria
     if PARTS_RE.search(t_f):
+        return False, "PART"
+
+    # Folia — tylko standalone
+    if FOLIA_RE.search(t_f):
         return False, "PART"
 
     # 4. Wykryj kategorię sprzętową
     hw_cat = None
-    if "vita" in t_f: hw_cat = "VITA"
-    elif "psp" in t_f: hw_cat = "PSP"
-    elif "3ds" in t_f: hw_cat = "3DS"
-    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
-    elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
+    if "vita" in t_f or "ps vita" in t_f or "playstation vita" in t_f:
+        hw_cat = "VITA"
+    elif "psp" in t_f:
+        hw_cat = "PSP"
+    elif "3ds" in t_f:
+        hw_cat = "3DS"
+    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]):
+        hw_cat = "DS"
+    elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]):
+        hw_cat = "RETRO"
 
     # 5. Blokada pojedynczych gier
-    # Jeśli mamy kategorię sprzętową ale tytuł nie wygląda jak konsola — wymagamy bundle
+    # Konsola jest OK jeśli: CONSOLE_MAIN_RE match LUB zawiera "konsola"/"console"
     if hw_cat:
         is_console_main = bool(CONSOLE_MAIN_RE.search(t_f))
         has_konsola = "konsola" in t_f or "console" in t_f
@@ -371,7 +373,7 @@ def process_item(title, url, price, src, item_id=None):
     clean_url = url.split("?")[0].rstrip("/")
     content_hash = hashlib.md5(f"{title[:40].lower().strip()}_{int(price)}".encode()).hexdigest()
 
-    # Deduplication: ID (Vinted/OLX), URL, content hash
+    # Deduplication
     if item_id and item_id in SENT_IDS: return False
     if clean_url in SENT_URLS or content_hash in SENT_HASHES: return False
 
@@ -379,9 +381,13 @@ def process_item(title, url, price, src, item_id=None):
     if valid:
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
-            send_telegram(msg)
-            log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
-
+            sent_ok = send_telegram(msg)
+            if sent_ok:
+                log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
+            else:
+                log_debug(f"⚠️ Telegram nie potwierdził wysyłki: {title[:50]}")
+                # Mimo to zapisz do historii żeby nie wysyłać ponownie
+        
         if item_id: SENT_IDS.add(item_id)
         SENT_URLS.add(clean_url)
         SENT_HASHES.add(content_hash)
@@ -392,10 +398,10 @@ def process_item(title, url, price, src, item_id=None):
     return False
 
 # ---------------------------------------------------------------------------
-# PĘTLA GŁÓWNA — Vinted i OLX/Allegro osobne pętle
+# PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v49.0 | OLX ID Dedup + TCG Fix + Stary Vinted Init")
+    log_debug("🚀 SNIPER v50.0 | Vita fix + folia fix + Telegram dedup")
     vinted_init()
 
     Q_V = [
@@ -437,12 +443,10 @@ if __name__ == "__main__":
         random.shuffle(v_list)
         random.shuffle(pl_list)
 
-        # Vinted — własna pętla
         for q_v in v_list:
             scrape_vinted(q_v)
             time.sleep(random.uniform(4, 8))
 
-        # OLX + Allegro — osobna pętla
         for q_pl in pl_list:
             scrape_olx(q_pl)
             time.sleep(random.uniform(2, 4))
