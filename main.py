@@ -166,10 +166,10 @@ def is_interesting_item(title, price):
 
     # TWOJE ORYGINALNE LIMITY
     limits = {
-        "PSP": (60, 250), "VITA": (60, 600), "3DS": (60, 500),
-        "DS": (60, 170), "RETRO": (60, 300), "WALKMAN": (60, 100)
+        "PSP": (50, 200), "VITA": (200, 500), "3DS": (100, 500),
+        "DS": (50, 170), "RETRO": (50, 250), "WALKMAN": (35, 100)
     }
-    lo, hi = limits.get(hw_cat, (60, 1000))
+    lo, hi = limits.get(hw_cat, (35, 1000))
     return (lo <= price <= hi), hw_cat
 
 def process_item(title, url, price, src):
