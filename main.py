@@ -120,7 +120,7 @@ def scrape_allegro_lokalnie(query):
 
 # --- FILTRY ---
 POKEMON_GAMES = ["silver", "gold", "blue", "red", "yellow", "crystal", "ruby", "sapphire", "emerald", "fire red", "leaf green", "soul silver", "heart gold", "diamond", "pearl", "platinum", "black", "white", "black 2", "white 2", "x", "y", "sun", "moon"]
-PARTS_RE = re.compile(r"\b(ekran|lcd|obudow|shell|rys|kabel|ładowark|zasilacz|bateria|etui|pokrowiec|szkło|przyciski|taśm|słuchawk|instrukcja|box|ericson|ericsson|manual)\b", re.I)
+PARTS_RE = re.compile(r"\b(ekran|lcd|obudow|shell|rys|kabel|ładowark|zasilacz|bateria|etui|pokrowiec|szkło|przyciski|taśm|słuchawk|instrukcja|box|ericson|ericsson|empty|puste|manual)\b", re.I)
 FOLIA_RE = re.compile(r"(^folia\b|folia\s*ochronna)", re.I)
 BUNDLE_RE = re.compile(r"\b(zestaw|komplet|bundle|lot|x\d|\d+x|\d+\s*gier|\d+\s*szt)\b", re.I)
 CONSOLE_MAIN_RE = re.compile(r"\b(konsola|console|handheld|psp\b|vita|nintendo|3ds|2ds|dsi|gameboy|gba|gbc|sp)\b", re.I)
