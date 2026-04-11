@@ -199,26 +199,40 @@ def scrape_allegro_lokalnie(query):
 # ---------------------------------------------------------------------------
 
 PARTS_RE = re.compile(r"""
-    \b(
-        ekran|screen|lcd|
-        obudow|shell|housing|casing|faceplate|
-        rysik|stylus|
-        kabel|cable|przewód|
-        ładowark|charger|zasilacz|power\s*supply|adapter|
-        bateria|battery|akumulator|
-        etui|pokrowiec|torb|bag|
-        szkło\s*hartowane|screen\s*protector|folia|
-        przyciski|buttons|trigger|
-        głośnik|speaker|
-        taśm|ribbon|flex|
-        obiektyw|lens|
-        remote\s*control|pilot\b|telecommand|
-        headphones?|słuchawk|earphones?|
-        akryl|acrylic|gablotk|card\s*case|card\s*holder|
-        \bsleeve\b|koszulk|
-        recordable\s*md|blank\s*md|kaseta\s*md|taśma\s*md
-    )\b
+    (
+        # Ekrany
+        \bekran\b|\bscreen\b|\blcd\b|
+        # Obudowy — prefix match (obudowa/obudowie/obudowy itd.)
+        \bobudow|\bshell\b|\bhousing\b|\bcasing\b|\bfaceplate\b|
+        # Rysiki
+        \brysik\b|\bstylus\b|
+        # Kable i zasilanie — prefix match
+        \bkabel\b|\bcable\b|\bprzewód\b|\bładowark|\bcharger\b|\bzasilacz\b|
+        \bpower\s*supply\b|\badapter\b|
+        # Baterie — prefix match
+        \bbateria\b|\bbattery\b|\bakumulator\b|
+        # Torby i etui — prefix match
+        \betui\b|\bpokrowiec\b|\btorb|\bbag\b|
+        # Ochrona ekranu — prefix match
+        \bszkło\s*hartowane\b|\bscreen\s*protector\b|\bfolia\b|
+        # Elektronika wewnętrzna
+        \bprzyciski\b|\bbuttons\b|\btrigger\b|\bgłośnik\b|\bspeaker\b|
+        \btaśm|\bribbon\b|\bflex\b|\bobiektyw\b|\blens\b|
+        # Audio akcesoria
+        \bremote\s*control\b|\bpilot\b|\btelecommand\b|
+        \bheadphones?\b|\bsłuchawk|\bearphones?\b|
+        # TCG akcesoria — prefix match
+        \bakryl\b|\bacrylic\b|\bgablotk|\bcard\s*case\b|\bcard\s*holder\b|
+        \bsleeve\b|\bkoszulk|
+        # Dyski MiniDisc (bez odtwarzacza) — prefix match
+        \brecordable\s*md\b|\bblank\s*md\b|\bkaseta\s*md|\btaśma\s*md\b|
+        \bminidisc\s*74\b|\bminidisc\s*80\b|\bmd\s*74\b|\bmd\s*80\b|
+        \brecordable\b.*\bmd\b
+    )
 """, re.I | re.VERBOSE)
+
+# --- BLOKADA TELEFONÓW W KATEGORII WALKMAN ---
+PHONE_WALKMAN_RE = re.compile(r"\b(ericsson|xperia|nokia|samsung|iphone|motorola|htc|huawei|xiaomi)\b", re.I)
 
 CLONE_RE = re.compile(r"\b(r36s|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+)\b", re.I)
 DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo)\b", re.I)
@@ -326,6 +340,7 @@ def is_interesting_item(title, price):
     if not hw_cat:
         if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
             if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
+            if PHONE_WALKMAN_RE.search(t_f): return False, "PHONE"
             hw_cat = "WALKMAN"
 
     if not hw_cat: return False, "NO_CAT"
