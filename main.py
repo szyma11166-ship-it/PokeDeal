@@ -3,36 +3,67 @@ import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os
 import urllib.parse
-import redis
 
-# --- KONFIGURACJA ŚRODOWISKA ---
+try:
+    import redis as redis_lib
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+
 os.environ['TZ'] = 'Europe/Warsaw'
 if hasattr(time, 'tzset'): time.tzset()
 
-# --- USTAWIENIA ---
+# --- KONFIGURACJA ---
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
 CHAT_ID = "-1003743099672"
+HISTORY_FILE = "sent_history.txt"
 REDIS_URL = os.getenv("REDIS_URL")
 
-# Inicjalizacja Redis (Pamięć na Railway)
+# --- REDIS ---
 r_db = None
-if REDIS_URL:
+if REDIS_AVAILABLE and REDIS_URL:
     try:
-        r_db = redis.from_url(REDIS_URL, decode_responses=True)
-        print("🚀 Połączono z Redis (Trwała pamięć aktywna)")
-    except:
-        print("⚠️ Brak połączenia z Redis - bot będzie miał amnezję po restarcie")
+        r_db = redis_lib.from_url(REDIS_URL, decode_responses=True)
+        r_db.ping()
+        print("🚀 Redis aktywny (trwała pamięć)")
+    except Exception as e:
+        print(f"⚠️ Redis niedostępny: {e} — fallback na plik")
+        r_db = None
 
-# Lokalna pamięć pomocnicza
+# --- PAMIĘĆ LOKALNA ---
 SENT_CACHE = set()
+SENT_IDS = set()
 IS_FIRST_RUN = True
 VINTED_LAST_INIT = 0
 VINTED_INIT_INTERVAL = 2 * 3600
 
-# Sesje
+if not r_db and os.path.exists(HISTORY_FILE):
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            for line in f:
+                val = line.strip()
+                if val:
+                    SENT_CACHE.add(val)
+    except: pass
+
+# --- SESJE ---
 VINTED_SESSION = curl_requests.Session(impersonate="chrome120")
+VINTED_SESSION.headers.update({
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "pl-PL,pl;q=0.9",
+    "Referer": "https://www.vinted.pl/catalog",
+    "Origin": "https://www.vinted.pl",
+})
+
 OLX_SESSION = requests.Session()
+OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+
 ALLEGRO_SESSION = requests.Session()
+ALLEGRO_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pl-PL,pl;q=0.9",
+})
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -47,59 +78,97 @@ def send_telegram(msg):
         return r.status_code == 200
     except: return False
 
-# --- LOGIKA PAMIĘCI ---
-def is_duplicate(url, content_hash):
-    """Sprawdza czy oferta była już wysłana (w tej sesji lub w Redis)."""
-    if f"{url}_{content_hash}" in SENT_CACHE: return True
+def is_duplicate(clean_url, content_hash):
+    key = f"{clean_url}_{content_hash}"
+    if key in SENT_CACHE: return True
     if r_db:
-        if r_db.exists(f"sent:{content_hash}"): return True
+        try:
+            if r_db.exists(f"sent:{content_hash}"): return True
+        except: pass
     return False
 
-def save_to_memory(url, content_hash):
-    """Zapisuje ofertę do pamięci."""
-    SENT_CACHE.add(f"{url}_{content_hash}")
+def save_to_memory(clean_url, content_hash):
+    SENT_CACHE.add(f"{clean_url}_{content_hash}")
     if r_db:
-        # Pamięta ofertę przez 48 godzin
-        r_db.setex(f"sent:{content_hash}", 172800, url)
+        try:
+            r_db.setex(f"sent:{content_hash}", 172800, clean_url)
+        except: pass
+    else:
+        try:
+            with open(HISTORY_FILE, "a") as f:
+                f.write(f"{clean_url}\n")
+        except: pass
 
-# --- SCRAPERY ---
+# ---------------------------------------------------------------------------
+# VINTED
+# ---------------------------------------------------------------------------
 def vinted_init():
     global VINTED_LAST_INIT
     try:
-        VINTED_SESSION.impersonate = random.choice(["chrome120", "chrome116", "safari15_5"])
+        log_debug("🔄 Inicjalizuję sesję Vinted...")
+        chosen = random.choice(["chrome120", "chrome116", "safari15_5", "edge101"])
+        VINTED_SESSION.impersonate = chosen
         VINTED_SESSION.cookies.clear()
         r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
         if r.status_code == 200:
+            log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
             VINTED_LAST_INIT = time.time()
             return True
-    except: pass
-    return False
+        log_debug(f"💥 Vinted init: {r.status_code}")
+        return False
+    except Exception as e:
+        log_debug(f"💥 Błąd init Vinted: {e}")
+        return False
+
+def vinted_ensure():
+    if time.time() - VINTED_LAST_INIT > VINTED_INIT_INTERVAL:
+        return vinted_init()
+    return True
 
 def scrape_vinted(query):
-    if time.time() - VINTED_LAST_INIT > VINTED_INIT_INTERVAL: vinted_init()
+    if not vinted_ensure(): return
     try:
         url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={urllib.parse.quote_plus(query)}&order=newest_first&per_page=30"
         r = VINTED_SESSION.get(url, timeout=20)
+        if r.status_code in [401, 403]:
+            log_debug(f"🔄 Vinted {r.status_code} [{query}] — reset...")
+            time.sleep(random.uniform(10, 20))
+            if vinted_init():
+                r = VINTED_SESSION.get(url, timeout=20)
+            else:
+                return
         if r.status_code == 200:
             items = r.json().get("items", [])
+            new_count = 0
             for item in items:
+                item_id = str(item.get("id", ""))
+                if item_id and item_id in SENT_IDS: continue
                 title = item.get("title", "")
                 p_raw = item.get("price", 0)
                 price = float(p_raw.get("amount", 0)) if isinstance(p_raw, dict) else float(p_raw or 0)
                 item_url = item.get("url", "")
                 if not item_url.startswith("http"): item_url = f"https://www.vinted.pl{item_url}"
-                process_item(title, item_url, price, "VINTED")
-    except: pass
+                if process_item(title, item_url, price, "VINTED", item_id=item_id): new_count += 1
+            log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
+        else:
+            log_debug(f"⚠️ Vinted [{query}]: {r.status_code}")
+    except Exception as e:
+        log_debug(f"💥 Błąd Vinted [{query}]: {e}")
 
 def scrape_olx(query):
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=20"
         r = OLX_SESSION.get(url, timeout=15)
         if r.status_code == 200:
+            new_count = 0
             for o in r.json().get('data', []):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
-                if p_val: process_item(o['title'], o['url'], float(p_val), "OLX")
-    except: pass
+                if not p_val: continue
+                olx_id = f"olx_{o.get('id', '')}"
+                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id): new_count += 1
+            log_debug(f"✅ OLX [{query}]: nowych {new_count}")
+    except Exception as e:
+        log_debug(f"💥 Błąd OLX: {e}")
 
 def scrape_allegro_lokalnie(query):
     try:
@@ -107,75 +176,183 @@ def scrape_allegro_lokalnie(query):
         r = ALLEGRO_SESSION.get(url, timeout=20)
         if r.status_code != 200: return
         soup = BeautifulSoup(r.text, "html.parser")
-        for item in soup.select("article[data-testid='listing-ad'], div[class*='mlc-itemcard']"):
+        new_count = 0
+        items = soup.select("article[data-testid='listing-ad'], div[class*='mlc-itemcard'], article[class*='offer-card']")
+        for item in items:
             try:
-                link = item.find("a", href=lambda h: h and "/oferta/" in h)
+                link = item if item.name == 'a' else item.find("a", href=lambda h: h and "/oferta/" in h)
                 if not link: continue
-                item_url = "https://allegrolokalnie.pl" + link.get("href") if not link.get("href").startswith("http") else link.get("href")
-                title = item.find(["h2", "h3", "span"], class_=re.compile(r"title|name", re.I)).get_text(strip=True)
-                price_match = re.search(r"(\d[\d\s]*(?:[,\.]\d{1,2})?)\s*zł", item.get_text())
-                if price_match: process_item(title, item_url, float(price_match.group(1).replace(" ", "").replace(",", ".")), "ALLEGRO")
+                item_url = link.get("href", "")
+                if not item_url.startswith("http"): item_url = f"https://allegrolokalnie.pl{item_url}"
+                title_el = item.find(["h2", "h3", "span"], class_=re.compile(r"title|name|heading", re.I))
+                title = title_el.get_text(strip=True) if title_el else item.get_text(separator=" ")[:60]
+                price_match = re.search(r"(\d[\d\s]*(?:[,\.]\d{1,2})?)\s*zł", item.get_text(separator=" "))
+                if price_match and process_item(title.strip(), item_url, float(price_match.group(1).replace(" ", "").replace(",", ".")), "ALLEGRO"):
+                    new_count += 1
             except: continue
-    except: pass
+        log_debug(f"✅ Allegro [{query}]: nowych {new_count}")
+    except Exception as e:
+        log_debug(f"💥 Błąd Allegro: {e}")
 
-# --- FILTRY ---
-POKEMON_GAMES = ["silver", "gold", "blue", "red", "yellow", "crystal", "ruby", "sapphire", "emerald", "fire red", "leaf green", "soul silver", "heart gold", "diamond", "pearl", "platinum", "black", "white", "black 2", "white 2", "x", "y", "sun", "moon"]
-PARTS_RE = re.compile(r"\b(ekran|osp|r36|lcd|obudow|shell|rys|medal|puste|otwarte|popielnica|popielniczka|otwarty|kabel|ładowark|zasilacz|bateria|etui|pokrowiec|szkło|przyciski|taśm|słuchawk|instrukcja|box|ericson|obudowa|ericsson|manual)\b", re.I)
-FOLIA_RE = re.compile(r"(^folia\b|folia\s*ochronna)", re.I)
-BUNDLE_RE = re.compile(r"\b(zestaw|puste|komplet|bundle|lot|x\d|\d+x|\d+\s*gier|\d+\s*szt)\b", re.I)
-CONSOLE_MAIN_RE = re.compile(r"\b(konsola|console|handheld|psp\b|vita|nintendo|3ds|2ds|dsi|gameboy|gba|gbc|sp)\b", re.I)
+# ---------------------------------------------------------------------------
+# FILTRY
+# ---------------------------------------------------------------------------
+
+PARTS_RE = re.compile(r"""
+    \b(
+        ekran|screen|lcd|
+        obudow|shell|housing|casing|faceplate|
+        rysik|stylus|
+        kabel|cable|przewód|
+        ładowark|charger|zasilacz|power\s*supply|adapter|
+        bateria|battery|akumulator|
+        etui|pokrowiec|torb|bag|
+        szkło\s*hartowane|screen\s*protector|folia|
+        przyciski|buttons|trigger|
+        głośnik|speaker|
+        taśm|ribbon|flex|
+        obiektyw|lens|
+        remote\s*control|pilot\b|telecommand|
+        headphones?|słuchawk|earphones?|
+        akryl|acrylic|gablotk|card\s*case|card\s*holder|
+        \bsleeve\b|koszulk|
+        recordable\s*md|blank\s*md|kaseta\s*md|taśma\s*md
+    )\b
+""", re.I | re.VERBOSE)
+
+CLONE_RE = re.compile(r"\b(r36s|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+)\b", re.I)
+DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo)\b", re.I)
+JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed)\b", re.I)
+
+BUNDLE_RE = re.compile(r"""
+    \b(
+        bundle|zestaw|komplet|lot|
+        x[2-9]|[2-9]\s*x\b|
+        \d+\s*gier|\d+\s*gry|\d+\s*sztuk|\d+\s*szt\b|
+        \d+\s*games?|
+        hry\s*\d|\d+\s*hry|
+        gry\s*na|gry\s*do|kilka\s*gier|par[eę]\s*gier|
+        pack(?!\s*art)
+    )\b
+""", re.I | re.VERBOSE)
+
+CONSOLE_MAIN_RE = re.compile(r"""
+    \b(
+        konsola|console|handheld|
+        psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
+        vita\s*(slim|fat|1000|2000|pch)|
+        new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
+        ds\s*lite|dsi\s*xl|
+        game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
+        gba\s*sp
+    )\b
+""", re.I | re.VERBOSE)
 
 def classify_tcg(t_f):
-    if not any(x in t_f for x in ["pokemon", "pokémon"]): return None
-    if "etb" in t_f or "elite trainer" in t_f: return ("TCG_ETB", 280)
-    if "booster box" in t_f or ("display" in t_f and "pokemon" in t_f): return ("TCG_BOX", 600)
-    if any(x in t_f for x in ["tin", "bundle", "blister", "booster"]): return ("TCG_SEALED", 150)
+    if "pokemon" not in t_f and "pokémon" not in t_f:
+        return None
+    if JAPANESE_RE.search(t_f):
+        return None
+    sealed_keywords = [
+        "etb", "elite trainer", "booster box", "display", "bundle",
+        "tin", "blister", "first partner", "collection box",
+        "premium collection", "booster pack", "booster",
+    ]
+    if not any(k in t_f for k in sealed_keywords):
+        return None
+    if "etb" in t_f or "elite trainer" in t_f:
+        return ("TCG_ETB", 280)
+    if "booster box" in t_f or ("display" in t_f and "pokemon" in t_f):
+        return ("TCG_BOX", 600)
+    if "first partner" in t_f:
+        return ("TCG_FIRST_PARTNER", 150)
+    if "bundle" in t_f:
+        return ("TCG_BUNDLE", 150)
+    if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
+        return ("TCG_MINI_TIN", 50)
+    if "tin" in t_f:
+        return ("TCG_TIN", 100)
+    if "blister" in t_f:
+        return ("TCG_BLISTER", 70)
+    if "booster pack" in t_f or (
+        "booster" in t_f and not any(x in t_f for x in ["box", "bundle", "display"])
+    ):
+        return ("TCG_BOOSTER", 25)
     return None
 
 def is_interesting_item(title, price):
     t_f = title.lower()
-    
-    # 1. TCG
-    tcg = classify_tcg(t_f)
-    if tcg:
-        subcat, max_p = tcg
-        return (20 <= price <= max_p), subcat
 
-    # 2. Pokemon Games Filter
-    is_pkmn_game = any(f" {g}" in t_f for g in POKEMON_GAMES)
-    has_console_word = any(x in t_f for x in ["konsola", "console", "zestaw", "gameboy", "gba", "3ds", "nintendo"])
-    if is_pkmn_game and not has_console_word: return False, "PKMN_GAME"
+    # 1. Klony
+    if CLONE_RE.search(t_f):
+        return False, "CLONE"
 
-    # 3. Części / Folia
-    if PARTS_RE.search(t_f) or FOLIA_RE.search(t_f): return False, "PART"
+    # 2. Pokemon TCG — przed PARTS_RE
+    if "pokemon" in t_f or "pokémon" in t_f:
+        tcg = classify_tcg(t_f)
+        if tcg:
+            subcat, max_price = tcg
+            if 10 <= price <= max_price:
+                return True, subcat
+            return False, "PRICE"
+        has_console = any(c in t_f for c in [
+            "vita", "psp", "3ds", "ds lite", "dsi", "nintendo ds",
+            "gameboy", "gba", "gbc", "game boy"
+        ])
+        if not has_console:
+            return False, "PKMN_JUNK"
 
-    # 4. Kategorie i TWOJE LIMITU
+    # 3. Części
+    if PARTS_RE.search(t_f):
+        return False, "PART"
+
+    # 4. Kategoria sprzętowa
     hw_cat = None
     if "vita" in t_f: hw_cat = "VITA"
     elif "psp" in t_f: hw_cat = "PSP"
     elif "3ds" in t_f: hw_cat = "3DS"
-    elif "ds lite" in t_f or "dsi" in t_f or "nintendo ds" in t_f: hw_cat = "DS"
+    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
-    elif "walkman" in t_f: hw_cat = "WALKMAN"
+
+    # 5. Blokada pojedynczych gier
+    if hw_cat:
+        is_console_main = bool(CONSOLE_MAIN_RE.search(t_f))
+        has_konsola = "konsola" in t_f or "console" in t_f
+        if not is_console_main and not has_konsola:
+            if not BUNDLE_RE.search(t_f):
+                return False, "SINGLE_GAME"
+
+    # 6. Walkman
+    if not hw_cat:
+        if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
+            if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
+            hw_cat = "WALKMAN"
 
     if not hw_cat: return False, "NO_CAT"
-    
-    # Blokada gier (nie dotyczy walkmanów)
-    if hw_cat != "WALKMAN":
-        if not CONSOLE_MAIN_RE.search(t_f) and not BUNDLE_RE.search(t_f): return False, "SINGLE_GAME"
 
-    # TWOJE ORYGINALNE LIMITY
+    # 7. Limity (twoje oryginalne)
     limits = {
-        "PSP": (50, 200), "VITA": (200, 500), "3DS": (100, 500),
-        "DS": (50, 170), "RETRO": (50, 250), "WALKMAN": (35, 100)
+        "PSP":     (50, 200),
+        "VITA":    (200, 500),
+        "3DS":     (100, 500),
+        "DS":      (50, 170),
+        "RETRO":   (50, 250),
+        "WALKMAN": (35, 100),
     }
-    lo, hi = limits.get(hw_cat, (35, 1000))
-    return (lo <= price <= hi), hw_cat
+    lo, hi = limits.get(hw_cat, (50, 1000))
+    if lo <= price <= hi: return True, hw_cat
+    return False, "PRICE"
 
-def process_item(title, url, price, src):
+# ---------------------------------------------------------------------------
+# PROCESS ITEM
+# ---------------------------------------------------------------------------
+def process_item(title, url, price, src, item_id=None):
     global IS_FIRST_RUN
+
+    if item_id and item_id in SENT_IDS: return False
+
     clean_url = url.split("?")[0].rstrip("/")
-    content_hash = hashlib.md5(f"{title[:40].lower()}_{int(price)}".encode()).hexdigest()
+    content_hash = hashlib.md5(f"{title[:40].lower().strip()}_{int(price)}".encode()).hexdigest()
 
     if is_duplicate(clean_url, content_hash): return False
 
@@ -184,27 +361,54 @@ def process_item(title, url, price, src):
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
             send_telegram(msg)
-            log_debug(f"🎯 WYSŁANO: {title[:40]} ({price} zł)")
+            log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
+        if item_id: SENT_IDS.add(item_id)
         save_to_memory(clean_url, content_hash)
         return True
+    else:
+        log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
     return False
 
-# --- PĘTLA ---
+# ---------------------------------------------------------------------------
+# PĘTLA GŁÓWNA
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v54.0 | Redis Memory + Original Limits")
+    log_debug("🚀 SNIPER v55.0 | Redis + Filtry v49 + Twoje Limity")
     vinted_init()
-    
-    queries = ["psp", "ps vita", "nintendo 3ds", "nintendo ds lite", "game boy advance", "game boy color", "pokemon etb", "pokemon booster box", "sony walkman"]
+
+    Q_V = [
+        "psp", "ps vita", "nintendo 3ds", "nintendo ds lite",
+        "game boy advance", "game boy color",
+        "pokemon etb", "pokemon booster box", "pokemon bundle",
+        "pokemon tin", "pokemon blister",
+        "sony walkman", "sony discman", "minidisc player",
+    ]
+    Q_PL = [
+        "psp konsola", "ps vita konsola", "nintendo 3ds", "nintendo ds lite",
+        "gameboy advance", "gameboy color",
+        "pokemon etb", "pokemon booster box",
+        "sony walkman", "sony discman",
+    ]
 
     while True:
         if 1 <= time.localtime().tm_hour < 6:
-            time.sleep(1800); continue
+            time.sleep(1800)
+            continue
 
-        random.shuffle(queries)
-        for q in queries:
-            scrape_vinted(q); time.sleep(random.uniform(4, 7))
-            scrape_olx(q); time.sleep(random.uniform(2, 4))
-            scrape_allegro_lokalnie(q); time.sleep(random.uniform(3, 5))
+        v_list = Q_V.copy()
+        pl_list = Q_PL.copy()
+        random.shuffle(v_list)
+        random.shuffle(pl_list)
+
+        for q_v in v_list:
+            scrape_vinted(q_v)
+            time.sleep(random.uniform(4, 8))
+
+        for q_pl in pl_list:
+            scrape_olx(q_pl)
+            time.sleep(random.uniform(2, 4))
+            scrape_allegro_lokalnie(q_pl)
+            time.sleep(random.uniform(3, 5))
 
         IS_FIRST_RUN = False
         log_debug("💤 Przerwa 5 min.")
