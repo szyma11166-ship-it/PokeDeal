@@ -254,6 +254,7 @@ CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
+        pch-?\d{4}|                         # PS Vita modele: PCH-1000, PCH-2000 itd
         vita\s*(slim|fat|1000|2000|pch)|
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
         ds\s*lite|dsi\s*xl|
@@ -262,11 +263,29 @@ CONSOLE_MAIN_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
+# Słowa sygnalizujące puste/użyte opakowanie lub luźne karty — blokada TCG
+TCG_EMPTY_RE = re.compile(r"""
+    \b(
+        empty|pusty|puste|pusta|
+        tyhj|leer|prázdný|prazdny|ures|
+        used\s*tin|empty\s*tin|pusty\s*tin|
+        loose|luzem|luzne|luźne|
+        single|singles|pojedyncz|
+        holo\s*rare|reverse\s*holo|
+        \d+\s*cards?(?!\s*pack)  # "15 cards" ale nie "booster pack"
+    )\b
+""", re.I | re.VERBOSE)
+
 def classify_tcg(t_f):
     if "pokemon" not in t_f and "pokémon" not in t_f:
         return None
     if JAPANESE_RE.search(t_f):
         return None
+
+    # Blokada pustych opakowań i luźnych kart
+    if TCG_EMPTY_RE.search(t_f):
+        return None
+
     sealed_keywords = [
         "etb", "elite trainer", "booster box", "display", "bundle",
         "tin", "blister", "first partner", "collection box",
@@ -281,6 +300,11 @@ def classify_tcg(t_f):
     if "first partner" in t_f:
         return ("TCG_FIRST_PARTNER", 150)
     if "bundle" in t_f:
+        # "bundle" z luźnymi kartami — blokuj jeśli brak słów sealed
+        if not any(x in t_f for x in ["booster", "sealed", "nowy", "new", "sealed"]):
+            # Sprawdź czy to nie jest po prostu zestaw luźnych kart
+            if any(x in t_f for x in ["holo", "vintage", "ultra beast", "lv.x", "lv x", "ex ", " ex"]):
+                return None  # luźne karty udające bundle
         return ("TCG_BUNDLE", 150)
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
         return ("TCG_MINI_TIN", 50)
@@ -336,11 +360,14 @@ def is_interesting_item(title, price):
             if not BUNDLE_RE.search(t_f):
                 return False, "SINGLE_GAME"
 
-    # 6. Walkman
+    # 6. Walkman — tylko Sony
     if not hw_cat:
         if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
             if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
             if PHONE_WALKMAN_RE.search(t_f): return False, "PHONE"
+            # Tylko Sony — blokuj inne marki
+            if not any(x in t_f for x in ["sony", "aiwa"]):
+                return False, "NOT_SONY"
             hw_cat = "WALKMAN"
 
     if not hw_cat: return False, "NO_CAT"
@@ -388,19 +415,19 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v55.0 | Redis + Filtry v49 + Twoje Limity")
+    log_debug("🚀 SNIPER v56.0 | TCG Empty Fix + Sony Only Walkman + 3DS XL Queries")
     vinted_init()
 
     Q_V = [
-        "psp", "ps vita", "nintendo 3ds", "nintendo ds lite",
-        "game boy advance", "game boy color",
+        "psp", "ps vita", "nintendo 3ds xl", "nintendo 3ds ll",
+        "nintendo ds lite", "game boy advance", "game boy color",
         "pokemon etb", "pokemon booster box", "pokemon bundle",
         "pokemon tin", "pokemon blister",
-        "sony walkman", "sony discman", "minidisc player",
+        "sony walkman", "sony discman", "sony minidisc",
     ]
     Q_PL = [
-        "psp konsola", "ps vita konsola", "nintendo 3ds", "nintendo ds lite",
-        "gameboy advance", "gameboy color",
+        "psp konsola", "ps vita konsola", "nintendo 3ds xl", "nintendo 3ds ll",
+        "nintendo ds lite", "gameboy advance", "gameboy color",
         "pokemon etb", "pokemon booster box",
         "sony walkman", "sony discman",
     ]
