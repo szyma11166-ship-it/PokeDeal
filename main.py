@@ -123,7 +123,7 @@ POKEMON_GAMES = ["silver", "gold", "blue", "red", "yellow", "crystal", "ruby", "
 PARTS_RE = re.compile(r"\b(ekran|lcd|obudow|shell|rys|kabel|ładowark|zasilacz|bateria|etui|pokrowiec|szkło|przyciski|taśm|słuchawk|instrukcja|box|ericson|ericsson|manual)\b", re.I)
 FOLIA_RE = re.compile(r"(^folia\b|folia\s*ochronna)", re.I)
 BUNDLE_RE = re.compile(r"\b(zestaw|puste|komplet|bundle|lot|x\d|\d+x|\d+\s*gier|\d+\s*szt)\b", re.I)
-CONSOLE_MAIN_RE = re.compile(r"\b(konsola|console|handheld|psp\b|vita|nintendo|3ds|2ds|dsi|gameboy|gba|gbc|sp)\b", re.I)
+CONSOLE_MAIN_RE = re.compile(r"\b(konsola|medal|puste|console|handheld|psp\b|vita|nintendo|3ds|2ds|dsi|gameboy|gba|gbc|sp)\b", re.I)
 
 def classify_tcg(t_f):
     if not any(x in t_f for x in ["pokemon", "pokémon"]): return None
