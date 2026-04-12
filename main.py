@@ -263,16 +263,19 @@ CONSOLE_MAIN_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# Słowa sygnalizujące puste/użyte opakowanie lub luźne karty — blokada TCG
+# Sygnały pustego opakowania lub luźnych kart — blokada TCG
 TCG_EMPTY_RE = re.compile(r"""
     \b(
-        empty|pusty|puste|pusta|
-        tyhj|leer|prázdný|prazdny|ures|
-        used\s*tin|empty\s*tin|pusty\s*tin|
-        loose|luzem|luzne|luźne|
-        single|singles|pojedyncz|
-        holo\s*rare|reverse\s*holo|
-        \d+\s*cards?(?!\s*pack)  # "15 cards" ale nie "booster pack"
+        empty|pusty|puste|pusta|puszka|      # puste opakowanie
+        tyhj|leer|prázdný|prazdny|ures|      # inne języki: pusty
+        used\s*tin|empty\s*tin|              # używany/pusty tin
+        loose|luzem|luzne|luźne|            # luźne
+        single|singles|pojedyncz|           # pojedyncze karty
+        holo\s*rare|reverse\s*holo|         # luźne holo
+        \d+\s*cards?\b|                     # "15 cards", "29 cards" itp
+        cards?\s*lot|cards?\s*bundle|       # "cards lot", "card bundle"
+        mixed\s*collection|mixed\s*set|     # mieszane zestawy luźnych kart
+        card\s*collection|kart\b            # "kart" po polsku
     )\b
 """, re.I | re.VERBOSE)
 
@@ -300,11 +303,9 @@ def classify_tcg(t_f):
     if "first partner" in t_f:
         return ("TCG_FIRST_PARTNER", 150)
     if "bundle" in t_f:
-        # "bundle" z luźnymi kartami — blokuj jeśli brak słów sealed
-        if not any(x in t_f for x in ["booster", "sealed", "nowy", "new", "sealed"]):
-            # Sprawdź czy to nie jest po prostu zestaw luźnych kart
-            if any(x in t_f for x in ["holo", "vintage", "ultra beast", "lv.x", "lv x", "ex ", " ex"]):
-                return None  # luźne karty udające bundle
+        # Bundle musi zawierać "booster" żeby być sealed
+        if "booster" not in t_f:
+            return None
         return ("TCG_BUNDLE", 150)
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
         return ("TCG_MINI_TIN", 50)
@@ -415,7 +416,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v56.0 | TCG Empty Fix + Sony Only Walkman + 3DS XL Queries")
+    log_debug("🚀 SNIPER v57.0 | TCG Loose Cards Block + Puste Puszki Fix")
     vinted_init()
 
     Q_V = [
