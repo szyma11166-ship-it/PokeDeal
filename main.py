@@ -269,7 +269,8 @@ CONSOLE_MAIN_RE = re.compile(r"""
         pch-?\d{4}|                         # PS Vita modele: PCH-1000, PCH-2000 itd
         vita\s*(slim|fat|1000|2000|pch)|
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
-        ds\s*lite|dsi\s*xl|\bdsi\b|         # samo DSi jako konsola
+        nintendo\s*3ds|nintendo\s*2ds|      # samo Nintendo 3DS/2DS
+        ds\s*lite|dsi\s*xl|\bdsi\b|
         \bdsi\s*(black|white|red|blue|pink|purple|yellow|green|32gb|16gb|cfw)|
         game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
         gba\s*sp
@@ -431,7 +432,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v60.0 | DSi Fix + Adapter Context Fix")
+    log_debug("🚀 SNIPER v62.0 | Nintendo 3DS CONSOLE_MAIN Fix")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
