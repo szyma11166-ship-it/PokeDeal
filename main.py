@@ -265,7 +265,8 @@ CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
-        psp\s*\d{4}|                        # PSP 1004, 2004, 3004 itd
+        psp[-\s]?\d{4}|                     # PSP-1004, PSP 2004, PSP3004
+        psp[-\s]?e\d{4}|                    # PSP-E1004, PSP E1004
         pch-?\d{4}|                         # PS Vita modele: PCH-1000, PCH-2000 itd
         vita\s*(slim|fat|1000|2000|pch)|
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
@@ -355,11 +356,18 @@ def is_interesting_item(title, price):
         if not has_console:
             return False, "PKMN_JUNK"
 
-    # 3. Części
-    if PARTS_RE.search(t_f):
-        return False, "PART"
-    if ADAPTER_MAIN_RE.search(t_f):
-        return False, "PART"
+    # 3. Części — ale NIE blokuj jeśli "konsola" lub "console" jest w tytule
+    #    (konsola z ładowarką/kablem w zestawie = ok)
+    has_konsola_in_title = "konsola" in t_f or "console" in t_f
+    if not has_konsola_in_title:
+        if PARTS_RE.search(t_f):
+            return False, "PART"
+        if ADAPTER_MAIN_RE.search(t_f):
+            return False, "PART"
+    else:
+        # Nawet przy konsoli blokuj jeśli to TYLKO część (tytuł zaczyna się od części)
+        if ADAPTER_MAIN_RE.search(t_f):
+            return False, "PART"
 
     # 4. Kategoria sprzętowa
     hw_cat = None
@@ -372,8 +380,7 @@ def is_interesting_item(title, price):
     # 5. Blokada pojedynczych gier
     if hw_cat:
         is_console_main = bool(CONSOLE_MAIN_RE.search(t_f))
-        has_konsola = "konsola" in t_f or "console" in t_f
-        if not is_console_main and not has_konsola:
+        if not is_console_main and not has_konsola_in_title:
             if not BUNDLE_RE.search(t_f):
                 return False, "SINGLE_GAME"
 
@@ -432,7 +439,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v62.0 | Nintendo 3DS CONSOLE_MAIN Fix")
+    log_debug("🚀 SNIPER v63.0 | PSP Model Fix + Konsola+Akcesoria Fix")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
