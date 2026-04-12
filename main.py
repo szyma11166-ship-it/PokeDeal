@@ -208,7 +208,7 @@ PARTS_RE = re.compile(r"""
         \brysik\b|\bstylus\b|
         # Kable i zasilanie — prefix match
         \bkabel\b|\bcable\b|\bprzewód\b|\bładowark|\bcharger\b|\bzasilacz\b|
-        \bpower\s*supply\b|\badapter\b|
+        \bpower\s*supply\b|
         # Baterie — prefix match
         \bbateria\b|\bbattery\b|\bakumulator\b|
         # Torby i etui — prefix match
@@ -230,6 +230,9 @@ PARTS_RE = re.compile(r"""
         \brecordable\b.*\bmd\b
     )
 """, re.I | re.VERBOSE)
+
+# Adapter/zasilacz blokowany tylko gdy jest głównym przedmiotem (na początku tytułu)
+ADAPTER_MAIN_RE = re.compile(r"^(adapter|zasilacz|ac\s*adapter|power\s*adapter|przejściówka)\b", re.I)
 
 # --- BLOKADA TELEFONÓW W KATEGORII WALKMAN ---
 PHONE_WALKMAN_RE = re.compile(r"\b(ericsson|xperia|nokia|samsung|iphone|motorola|htc|huawei|xiaomi)\b", re.I)
@@ -254,10 +257,12 @@ CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
+        psp\s*\d{4}|                        # PSP 1004, 2004, 3004 itd
         pch-?\d{4}|                         # PS Vita modele: PCH-1000, PCH-2000 itd
         vita\s*(slim|fat|1000|2000|pch)|
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
-        ds\s*lite|dsi\s*xl|
+        ds\s*lite|dsi\s*xl|\bdsi\b|         # samo DSi jako konsola
+        \bdsi\s*(black|white|red|blue|pink|purple|yellow|green|32gb|16gb|cfw)|
         game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
         gba\s*sp
     )\b
@@ -344,6 +349,8 @@ def is_interesting_item(title, price):
     # 3. Części
     if PARTS_RE.search(t_f):
         return False, "PART"
+    if ADAPTER_MAIN_RE.search(t_f):
+        return False, "PART"
 
     # 4. Kategoria sprzętowa
     hw_cat = None
@@ -416,16 +423,22 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v58.0 | Precyzyjne Zapytania po Modelach")
+    log_debug("🚀 SNIPER v60.0 | DSi Fix + Adapter Context Fix")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
     Q_V = [
-        # PSP
-        "psp 1000", "psp 2000", "psp 3000", "psp fat", "psp slim",
-        "psp go", "psp street", "psp konsola",
-        # PS Vita
-        "ps vita 1000", "ps vita 2000", "ps vita slim", "pch-1000", "pch-2000",
+        # PSP — wszystkie regiony
+        "psp fat", "psp slim", "psp go", "psp street", "psp konsola",
+        "psp 1000", "psp 1001", "psp 1004",
+        "psp 2000", "psp 2001", "psp 2004",
+        "psp 3000", "psp 3001", "psp 3004",
+        "psp e1000", "psp e1004",
+        # PS Vita — wszystkie regiony
+        "ps vita slim", "ps vita konsola",
+        "pch-1000", "pch-1001", "pch-1004",
+        "pch-1100",
+        "pch-2000", "pch-2001", "pch-2004",
         # 3DS
         "new 3ds xl", "new 3ds ll", "old 3ds xl", "nintendo 3ds xl", "nintendo 3ds ll",
         # DS
@@ -444,9 +457,11 @@ if __name__ == "__main__":
     # OLX + Allegro — polskie zapytania po modelach
     Q_PL = [
         # PSP
-        "psp 1000", "psp 2000", "psp 3000", "psp fat", "psp slim", "psp go",
+        "psp fat", "psp slim", "psp go", "psp street",
+        "psp 1004", "psp 2004", "psp 3004", "psp e1004",
         # PS Vita
         "ps vita konsola", "ps vita slim",
+        "pch-1004", "pch-2004",
         # 3DS
         "nintendo 3ds xl", "new 3ds xl",
         # DS
