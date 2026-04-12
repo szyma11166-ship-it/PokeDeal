@@ -416,20 +416,47 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v57.0 | TCG Loose Cards Block + Puste Puszki Fix")
+    log_debug("🚀 SNIPER v58.0 | Precyzyjne Zapytania po Modelach")
     vinted_init()
 
+    # Vinted — precyzyjne zapytania po modelach
     Q_V = [
-        "psp", "ps vita", "nintendo 3ds xl", "nintendo 3ds ll",
-        "nintendo ds lite", "game boy advance", "game boy color",
-        "pokemon etb", "pokemon booster box", "pokemon bundle",
-        "pokemon tin", "pokemon blister",
+        # PSP
+        "psp 1000", "psp 2000", "psp 3000", "psp fat", "psp slim",
+        "psp go", "psp street", "psp konsola",
+        # PS Vita
+        "ps vita 1000", "ps vita 2000", "ps vita slim", "pch-1000", "pch-2000",
+        # 3DS
+        "new 3ds xl", "new 3ds ll", "old 3ds xl", "nintendo 3ds xl", "nintendo 3ds ll",
+        # DS
+        "nintendo ds lite", "nintendo dsi", "nintendo dsi xl",
+        # Game Boy
+        "game boy advance sp", "game boy advance", "game boy color",
+        "game boy pocket", "game boy light", "game boy classic",
+        "gba sp", "gameboy color", "gameboy advance",
+        # TCG
+        "pokemon etb", "pokemon elite trainer box",
+        "pokemon booster box", "pokemon booster bundle",
+        "pokemon tin", "pokemon mini tin", "pokemon blister",
+        # Walkman
         "sony walkman", "sony discman", "sony minidisc",
     ]
+    # OLX + Allegro — polskie zapytania po modelach
     Q_PL = [
-        "psp konsola", "ps vita konsola", "nintendo 3ds xl", "nintendo 3ds ll",
-        "nintendo ds lite", "gameboy advance", "gameboy color",
+        # PSP
+        "psp 1000", "psp 2000", "psp 3000", "psp fat", "psp slim", "psp go",
+        # PS Vita
+        "ps vita konsola", "ps vita slim",
+        # 3DS
+        "nintendo 3ds xl", "new 3ds xl",
+        # DS
+        "nintendo ds lite", "nintendo dsi",
+        # Game Boy
+        "gameboy advance sp", "gameboy advance", "gameboy color",
+        "game boy pocket", "game boy classic",
+        # TCG
         "pokemon etb", "pokemon booster box",
+        # Walkman
         "sony walkman", "sony discman",
     ]
 
