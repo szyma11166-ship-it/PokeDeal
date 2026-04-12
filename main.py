@@ -245,34 +245,63 @@ ADAPTER_MAIN_RE = re.compile(r"^(adapter|zasilacz|ac\s*adapter|power\s*adapter|p
 # --- BLOKADA TELEFONÓW W KATEGORII WALKMAN ---
 PHONE_WALKMAN_RE = re.compile(r"\b(ericsson|xperia|nokia|samsung|iphone|motorola|htc|huawei|xiaomi)\b", re.I)
 
-CLONE_RE = re.compile(r"\b(r36s|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+)\b", re.I)
-DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo)\b", re.I)
-JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed)\b", re.I)
+CLONE_RE = re.compile(r"\b(r36s?|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+|rgb\d+|rgxx|rg cube|gameforce|chi\s*li|pxp|sup\s*game|retromini|bittboy|pocketgo)\b", re.I)
+DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo|dictaphone|diktafon|sanelukone)\b", re.I)
+JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed|nihon|nippon|\bjp\b(?=\s*(ver|ed|version|edition)))\b", re.I)
 
 BUNDLE_RE = re.compile(r"""
     \b(
+        # Polski
         bundle|zestaw|komplet|lot|
+        # Angielski
         x[2-9]|[2-9]\s*x\b|
         \d+\s*gier|\d+\s*gry|\d+\s*sztuk|\d+\s*szt\b|
         \d+\s*games?|
-        hry\s*\d|\d+\s*hry|
+        # Słowiańskie
+        hry\s*\d|\d+\s*hry|                  # czeski/słowacki
         gry\s*na|gry\s*do|kilka\s*gier|par[eę]\s*gier|
+        # Inne języki
+        \d+\s*spel\b|\d+\s*spiele?\b|        # szwedzki/niemiecki
+        \d+\s*jeux?\b|                       # francuski
+        \d+\s*juegos?\b|                     # hiszpański
+        \d+\s*giochi?\b|                     # włoski
+        \d+\s*igr[aei]\b|                    # rosyjski/serbski
+        \d+\s*joc[uri]*\b|                   # rumuński
+        \d+\s*játék\b|                       # węgierski
+        \d+\s*žaidim\w+|                     # litewski
+        paketti\b|pakket\b|                  # fiński/niderlandzki
         pack(?!\s*art)
     )\b
 """, re.I | re.VERBOSE)
 
 CONSOLE_MAIN_RE = re.compile(r"""
     \b(
-        konsola|console|handheld|
+        # Polski
+        konsola|
+        # Angielski
+        console|handheld|
+        # Inne języki europejskie (szwedzki, fiński, czeski, słowacki, rumuński, węgierski, litewski, łotewski)
+        konsol\b|konsolę|konsoli|            # szwedzki/nordycki "konsol"
+        konzol\b|konzole\b|konzolę\b|        # czeski/słowacki
+        consolă\b|consolă\b|                 # rumuński
+        konzole\b|spielkonsole\b|            # niemiecki
+        pelikonsoli\b|pelikonsole\b|         # fiński
+        spelkonsol\b|                        # szwedzki
+        mängukonsool\b|                      # estoński
+        # PSP modele
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
-        psp[-\s]?\d{4}|                     # PSP-1004, PSP 2004, PSP3004
-        psp[-\s]?e\d{4}|                    # PSP-E1004, PSP E1004
-        pch-?\d{4}|                         # PS Vita modele: PCH-1000, PCH-2000 itd
+        psp[-\s]?\d{4}|                      # PSP-1004, PSP 2004, PSP3004
+        psp[-\s]?e\d{4}|                     # PSP-E1004, PSP E1004
+        psp[-\s]?\d{4}[a-z]|                 # PSP-1004K itd
+        # PS Vita modele
+        pch-?\d{4}|
         vita\s*(slim|fat|1000|2000|pch)|
+        # 3DS/DS
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
-        nintendo\s*3ds|nintendo\s*2ds|      # samo Nintendo 3DS/2DS
+        nintendo\s*3ds|nintendo\s*2ds|
         ds\s*lite|dsi\s*xl|\bdsi\b|
         \bdsi\s*(black|white|red|blue|pink|purple|yellow|green|32gb|16gb|cfw)|
+        # Game Boy
         game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
         gba\s*sp
     )\b
@@ -281,16 +310,32 @@ CONSOLE_MAIN_RE = re.compile(r"""
 # Sygnały pustego opakowania lub luźnych kart — blokada TCG
 TCG_EMPTY_RE = re.compile(r"""
     \b(
-        empty|pusty|puste|pusta|puszka|      # puste opakowanie
-        tyhj|leer|prázdný|prazdny|ures|      # inne języki: pusty
-        used\s*tin|empty\s*tin|              # używany/pusty tin
-        loose|luzem|luzne|luźne|            # luźne
-        single|singles|pojedyncz|           # pojedyncze karty
-        holo\s*rare|reverse\s*holo|         # luźne holo
-        \d+\s*cards?\b|                     # "15 cards", "29 cards" itp
-        cards?\s*lot|cards?\s*bundle|       # "cards lot", "card bundle"
-        mixed\s*collection|mixed\s*set|     # mieszane zestawy luźnych kart
-        card\s*collection|kart\b            # "kart" po polsku
+        # Puste opakowanie — wielojęzyczne
+        empty|pusty|puste|pusta|puszka|
+        tomma?\b|                            # szwedzki: tomma/tom = pusty
+        tyhj[äa]\b|tyhjä\b|                 # fiński: tyhjä = pusty
+        leer\b|leere\b|                      # niemiecki
+        prázdný|prázdné|prazdny|            # czeski/słowacki
+        ures\b|üres\b|                       # węgierski
+        golos\b|                             # rosyjski/ukraiński
+        vuota\b|vuote\b|                     # włoski
+        vacía\b|vacío\b|                     # hiszpański
+        vide\b|vides\b|                      # francuski
+        # Używane/otwarte
+        used\s*tin|empty\s*tin|open\b|opened\b|
+        # Luźne karty
+        loose|luzem|luzne|luźne|
+        single|singles|pojedyncz|
+        # Holo/rare luźne
+        holo\s*rare|reverse\s*holo|
+        # Liczby kart
+        \d+\s*cards?\b|
+        cards?\s*lot|cards?\s*bundle|
+        # Kolekcje luźnych
+        mixed\s*collection|mixed\s*set|
+        card\s*collection|
+        # Polski "kart"
+        \bkart\b
     )\b
 """, re.I | re.VERBOSE)
 
@@ -439,7 +484,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v63.0 | PSP Model Fix + Konsola+Akcesoria Fix")
+    log_debug("🚀 SNIPER v64.0 | Multilingual Support + PSP Model Fix")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
