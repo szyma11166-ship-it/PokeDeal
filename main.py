@@ -23,7 +23,15 @@ REDIS_URL = os.getenv("REDIS_URL")
 r_db = None
 if REDIS_AVAILABLE and REDIS_URL:
     try:
-        r_db = redis_lib.from_url(REDIS_URL, decode_responses=True)
+        # Railway używa rediss:// (SSL) lub redis:// — obsługujemy oba
+        if REDIS_URL.startswith("rediss://"):
+            r_db = redis_lib.from_url(
+                REDIS_URL,
+                decode_responses=True,
+                ssl_cert_reqs=None
+            )
+        else:
+            r_db = redis_lib.from_url(REDIS_URL, decode_responses=True)
         r_db.ping()
         print("🚀 Redis aktywny (trwała pamięć)")
     except Exception as e:
