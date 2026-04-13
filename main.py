@@ -214,9 +214,11 @@ PARTS_RE = re.compile(r"""
         \bobudow|\bshell\b|\bhousing\b|\bcasing\b|\bfaceplate\b|
         # Rysiki
         \brysik\b|\bstylus\b|
-        # Kable i zasilanie — prefix match
+        # Kable i zasilanie — prefix match + wielojęzyczne
         \bkabel\b|\bcable\b|\bprzewód\b|\bładowark|\bcharger\b|\bzasilacz\b|
         \bpower\s*supply\b|
+        \bpunjač\b|\bnabíječ|\bnabíjačk|\blader\b|\bladegerät\b|  # serbski/czeski/słowacki/szwedzki/niemiecki
+        \bcharger\b|\boplader\b|\blaturi\b|\btöltő\b|              # duński/rumuński/węgierski
         # Baterie — prefix match
         \bbateria\b|\bbattery\b|\bakumulator\b|
         # Torby i etui — prefix match
@@ -280,6 +282,7 @@ CONSOLE_MAIN_RE = re.compile(r"""
         konsola|
         # Angielski
         console|handheld|
+        playstation\s*portable|              # PSP pełna nazwa
         # Inne języki europejskie (szwedzki, fiński, czeski, słowacki, rumuński, węgierski, litewski, łotewski)
         konsol\b|konsolę|konsoli|            # szwedzki/nordycki "konsol"
         konzol\b|konzole\b|konzolę\b|        # czeski/słowacki
@@ -401,16 +404,21 @@ def is_interesting_item(title, price):
         if not has_console:
             return False, "PKMN_JUNK"
 
-    # 3. Części — ale NIE blokuj jeśli "konsola" lub "console" jest w tytule
-    #    (konsola z ładowarką/kablem w zestawie = ok)
-    has_konsola_in_title = "konsola" in t_f or "console" in t_f
+    # 3. Części — ekran/display/lcd zawsze blokowane (nawet przy "konsola")
+    #    Reszta PARTS_RE pomijana jeśli "konsola/console" w tytule
+    has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
+
+    # Ekrany i wyświetlacze — absolutna blokada nawet przy konsolach
+    SCREEN_RE = re.compile(r"\b(ekran|screen|lcd|display\s*(ips|oled|tft|lcd)?|wyświetlacz)\b", re.I)
+    if SCREEN_RE.search(t_f):
+        return False, "PART"
+
     if not has_konsola_in_title:
         if PARTS_RE.search(t_f):
             return False, "PART"
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
     else:
-        # Nawet przy konsoli blokuj jeśli to TYLKO część (tytuł zaczyna się od części)
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
 
@@ -424,17 +432,15 @@ def is_interesting_item(title, price):
 
     # 5. Blokada pojedynczych gier
     if hw_cat:
-        is_console_main = bool(CONSOLE_MAIN_RE.search(t_f))
-        if not is_console_main and not has_konsola_in_title:
+        if not has_konsola_in_title:
             if not BUNDLE_RE.search(t_f):
                 return False, "SINGLE_GAME"
 
-    # 6. Walkman — tylko Sony
+    # 6. Walkman — tylko Sony/Aiwa, blokada Philips i innych
     if not hw_cat:
         if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
             if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
             if PHONE_WALKMAN_RE.search(t_f): return False, "PHONE"
-            # Tylko Sony — blokuj inne marki
             if not any(x in t_f for x in ["sony", "aiwa"]):
                 return False, "NOT_SONY"
             hw_cat = "WALKMAN"
@@ -484,7 +490,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v64.0 | Multilingual Support + PSP Model Fix")
+    log_debug("🚀 SNIPER v65.0 | Screen Always Blocked + Sony Only Walkman + Multilingual Parts")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
