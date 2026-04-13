@@ -302,11 +302,13 @@ CONSOLE_MAIN_RE = re.compile(r"""
         # 3DS/DS
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
         nintendo\s*3ds|nintendo\s*2ds|
+        nintendo\s*ds\b|                     # samo Nintendo DS (fat)
         ds\s*lite|dsi\s*xl|\bdsi\b|
         \bdsi\s*(black|white|red|blue|pink|purple|yellow|green|32gb|16gb|cfw)|
-        # Game Boy
+        # Game Boy — z i bez spacji (Gameboy/Game Boy)
         game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
-        gba\s*sp
+        gameboy\s*(color|advance|sp|pocket|light|classic)|
+        gba\s*sp|\bgbc\b|\bgba\b             # skróty
     )\b
 """, re.I | re.VERBOSE)
 
@@ -490,7 +492,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v65.0 | Screen Always Blocked + Sony Only Walkman + Multilingual Parts")
+    log_debug("🚀 SNIPER v66.0 | Nintendo DS + Gameboy Color Fix + More Queries")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
@@ -510,10 +512,12 @@ if __name__ == "__main__":
         "new 3ds xl", "new 3ds ll", "old 3ds xl", "nintendo 3ds xl", "nintendo 3ds ll",
         # DS
         "nintendo ds lite", "nintendo dsi", "nintendo dsi xl",
+        "nintendo ds",                       # DS fat (pierwsza generacja)
         # Game Boy
         "game boy advance sp", "game boy advance", "game boy color",
         "game boy pocket", "game boy light", "game boy classic",
         "gba sp", "gameboy color", "gameboy advance",
+        "gameboy color", "gameboy pocket", "gameboy light",
         # TCG
         "pokemon etb", "pokemon elite trainer box",
         "pokemon booster box", "pokemon booster bundle",
@@ -532,10 +536,10 @@ if __name__ == "__main__":
         # 3DS
         "nintendo 3ds xl", "new 3ds xl",
         # DS
-        "nintendo ds lite", "nintendo dsi",
+        "nintendo ds lite", "nintendo dsi", "nintendo ds",
         # Game Boy
         "gameboy advance sp", "gameboy advance", "gameboy color",
-        "game boy pocket", "game boy classic",
+        "game boy pocket", "game boy classic", "gameboy pocket",
         # TCG
         "pokemon etb", "pokemon booster box",
         # Walkman
