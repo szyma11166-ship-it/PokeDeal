@@ -326,20 +326,30 @@ TCG_EMPTY_RE = re.compile(r"""
         vuota\b|vuote\b|                     # włoski
         vacía\b|vacío\b|                     # hiszpański
         vide\b|vides\b|                      # francuski
-        # Używane/otwarte
-        used\s*tin|empty\s*tin|open\b|opened\b|
+        tom\s*boks|tomt\b|                   # norweski/duński: tom = pusty
+        # Otwarte/używane — wielojęzyczne
+        used\s*tin|empty\s*tin|
+        avattuja\b|avattu\b|                 # fiński: avattuja = otwarte
+        opened?\b|otwart\w+|                 # angielski/polski
+        ouverte?\b|                          # francuski: ouverte = otwarte
+        geöffnet\b|                          # niemiecki: geöffnet = otwarte
+        aperto\b|                            # włoski: aperto = otwarte
+        abierto\b|                           # hiszpański: abierto = otwarte
+        otevřen\w+|                          # czeski: otevřená = otwarta
         # Luźne karty
         loose|luzem|luzne|luźne|
         single|singles|pojedyncz|
         # Holo/rare luźne
         holo\s*rare|reverse\s*holo|
-        # Liczby kart
+        # Liczby kart — sygnał luźnych
         \d+\s*cards?\b|
+        \d+\s*kort\w*\b|                     # szwedzki/duński: kort = karta
+        \d+\s*kortti\w*\b|                   # fiński: korttia = kart
+        \d+\s*kart\w*\b|                     # polski: kart/karty
         cards?\s*lot|cards?\s*bundle|
         # Kolekcje luźnych
         mixed\s*collection|mixed\s*set|
         card\s*collection|
-        # Polski "kart"
         \bkart\b
     )\b
 """, re.I | re.VERBOSE)
@@ -368,9 +378,8 @@ def classify_tcg(t_f):
     if "first partner" in t_f:
         return ("TCG_FIRST_PARTNER", 150)
     if "bundle" in t_f:
-        # Bundle musi zawierać "booster" żeby być sealed
-        if "booster" not in t_f:
-            return None
+        # Bundle — przepuszcza jeśli ma "booster" LUB wygląda jak sealed produkt
+        # Blokuj tylko jeśli ma sygnały luźnych kart w nazwie zestawu
         return ("TCG_BUNDLE", 150)
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
         return ("TCG_MINI_TIN", 50)
@@ -411,7 +420,7 @@ def is_interesting_item(title, price):
     has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
 
     # Ekrany i wyświetlacze — absolutna blokada nawet przy konsolach
-    SCREEN_RE = re.compile(r"\b(ekran|screen|lcd|display\s*(ips|oled|tft|lcd)?|wyświetlacz)\b", re.I)
+    SCREEN_RE = re.compile(r"\b(ekran|screen|lcd|ecran|display\s*(ips|oled|tft|lcd)?|wyświetlacz)\b", re.I)
     if SCREEN_RE.search(t_f):
         return False, "PART"
 
@@ -492,7 +501,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v66.0 | Nintendo DS + Gameboy Color Fix + More Queries")
+    log_debug("🚀 SNIPER v67.0 | TCG Empty Multilingual + Bundle Fix + ecran Block")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
