@@ -341,6 +341,14 @@ TCG_EMPTY_RE = re.compile(r"""
         single|singles|pojedyncz|
         # Holo/rare luźne
         holo\s*rare|reverse\s*holo|
+        # Języki — blokada nieangielskich wersji
+        chinese|korean|chinois|coréen|chinesisch|koreanisch|
+        # Bulk — zbiorcze zestawy luźnych kart
+        bulk\b|
+        # Akryl — gablotki/osłony
+        akryl\w*|acrylic|
+        # Mystery — losowe zestawy
+        mystery\b|
         # Liczby kart — sygnał luźnych
         \d+\s*cards?\b|
         \d+\s*kort\w*\b|                     # szwedzki/duński: kort = karta
@@ -501,7 +509,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v67.0 | TCG Empty Multilingual + Bundle Fix + ecran Block")
+    log_debug("🚀 SNIPER v68.0 | Banned Words: Mystery/Bulk/Akryl/Chinese/Korean")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
