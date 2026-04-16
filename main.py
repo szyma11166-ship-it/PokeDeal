@@ -296,9 +296,11 @@ CONSOLE_MAIN_RE = re.compile(r"""
         psp[-\s]?\d{4}|                      # PSP-1004, PSP 2004, PSP3004
         psp[-\s]?e\d{4}|                     # PSP-E1004, PSP E1004
         psp[-\s]?\d{4}[a-z]|                 # PSP-1004K itd
-        # PS Vita modele
+        sony\s*e\d{4}|                       # SonyE1004 bez spacji
+        # PS Vita
+        ps\s*vita\b|psvita\b|playstation\s*vita\b|  # samo PS Vita
         pch-?\d{4}|
-        vita\s*(slim|fat|1000|2000|pch)|
+        vita\s*(slim|fat|1000|2000|pch|oled|tv)|
         # 3DS/DS
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
         nintendo\s*3ds|nintendo\s*2ds|
@@ -423,25 +425,46 @@ def is_interesting_item(title, price):
         if not has_console:
             return False, "PKMN_JUNK"
 
-    # 3. Części — ekran/display/lcd zawsze blokowane (nawet przy "konsola")
-    #    Reszta PARTS_RE pomijana jeśli "konsola/console" w tytule
-    has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
+    # 3. Sygnał gry — blokada przed kategoryzacją
+    # "gra X na PSP", "na nintendo DS", "X PSP gra" itp.
+    GAME_SIGNAL_RE = re.compile(r"""
+        \b(
+            ^gra\s+|                             # tytuł zaczyna się od "gra"
+            \bgra\s+na\s+|                       # "gra na PSP/DS/GBA"
+            \bna\s+(nintendo|psp|ds|gba|gbc|vita)\b|  # "na nintendo/psp/ds"
+            \bgame\s+for\s+|                     # "game for PSP"
+            \bjoc\s+|jogo\s+|juego\s+|jeu\s+|   # rumuński/port/hiszp/franc "gra"
+            \bspel\s+till\s+|spil\s+til\s+       # szwedzki/duński "gra na"
+        )
+    """, re.I | re.VERBOSE)
 
-    # Ekrany i wyświetlacze — absolutna blokada nawet przy konsolach
+    is_game_signal = bool(GAME_SIGNAL_RE.search(t_f))
+
+    # 4. Ekrany — absolutna blokada
     SCREEN_RE = re.compile(r"\b(ekran|screen|lcd|ecran|display\s*(ips|oled|tft|lcd)?|wyświetlacz)\b", re.I)
     if SCREEN_RE.search(t_f):
         return False, "PART"
 
-    if not has_konsola_in_title:
+    # 5. Sprawdź czy tytuł to konsola (nie gra)
+    has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
+    has_bundle_signal = bool(BUNDLE_RE.search(t_f))
+
+    # 6. Części — ignoruj jeśli konsola lub bundle z grami
+    if not has_konsola_in_title and not has_bundle_signal:
         if PARTS_RE.search(t_f):
             return False, "PART"
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
+    elif not has_konsola_in_title and has_bundle_signal:
+        # Bundle gier — ignoruj ładowarki/kable w zestawie
+        if ADAPTER_MAIN_RE.search(t_f):
+            return False, "PART"
     else:
+        # Konsola — ignoruj ładowarki ale blokuj standalone części
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
 
-    # 4. Kategoria sprzętowa
+    # 7. Kategoria sprzętowa
     hw_cat = None
     if "vita" in t_f: hw_cat = "VITA"
     elif "psp" in t_f: hw_cat = "PSP"
@@ -449,10 +472,14 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
-    # 5. Blokada pojedynczych gier
+    # 8. Blokada pojedynczych gier
     if hw_cat:
-        if not has_konsola_in_title:
-            if not BUNDLE_RE.search(t_f):
+        if is_game_signal:
+            # Sygnał gry — blokuj chyba że wyraźny bundle
+            if not has_bundle_signal:
+                return False, "SINGLE_GAME"
+        elif not has_konsola_in_title:
+            if not has_bundle_signal:
                 return False, "SINGLE_GAME"
 
     # 6. Walkman — tylko Sony/Aiwa, blokada Philips i innych
@@ -509,7 +536,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v68.0 | Banned Words: Mystery/Bulk/Akryl/Chinese/Korean")
+    log_debug("🚀 SNIPER v69.0 | PS Vita Fix + Game Signal + Bundle+Parts Logic")
     vinted_init()
 
     # Vinted — precyzyjne zapytania po modelach
