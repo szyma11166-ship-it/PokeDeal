@@ -1,7 +1,7 @@
 from curl_cffi import requests as curl_requests
 import requests
 from bs4 import BeautifulSoup
-import re, time, random, hashlib, os
+import re, time, random, hashlib, os, json
 import urllib.parse
 
 try:
@@ -23,7 +23,6 @@ REDIS_URL = os.getenv("REDIS_URL")
 r_db = None
 if REDIS_AVAILABLE and REDIS_URL:
     try:
-        # Railway używa rediss:// (SSL) lub redis:// — obsługujemy oba
         if REDIS_URL.startswith("rediss://"):
             r_db = redis_lib.from_url(
                 REDIS_URL,
@@ -76,11 +75,19 @@ ALLEGRO_SESSION.headers.update({
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
-def send_telegram(msg):
+def extract_olx_id(url):
+    """Wyciąga ID ogłoszenia z URL OLX do deep linka."""
+    match = re.search(r'-ID([a-zA-Z0-9]+)\.html', url)
+    return match.group(1) if match else None
+
+def send_telegram(msg, reply_markup=None):
     try:
+        payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
         r = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
+            data=payload,
             timeout=15
         )
         return r.status_code == 200
@@ -241,10 +248,8 @@ PARTS_RE = re.compile(r"""
     )
 """, re.I | re.VERBOSE)
 
-# Adapter/zasilacz blokowany tylko gdy jest głównym przedmiotem (na początku tytułu)
 ADAPTER_MAIN_RE = re.compile(r"^(adapter|zasilacz|ac\s*adapter|power\s*adapter|przejściówka)\b", re.I)
 
-# --- BLOKADA TELEFONÓW W KATEGORII WALKMAN ---
 PHONE_WALKMAN_RE = re.compile(r"\b(ericsson|xperia|nokia|samsung|iphone|motorola|htc|huawei|xiaomi)\b", re.I)
 
 CLONE_RE = re.compile(r"\b(r36s?|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+|rgb\d+|rgxx|rg cube|gameforce|chi\s*li|pxp|sup\s*game|retromini|bittboy|pocketgo)\b", re.I)
@@ -314,7 +319,6 @@ CONSOLE_MAIN_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# Sygnały pustego opakowania lub luźnych kart — blokada TCG
 TCG_EMPTY_RE = re.compile(r"""
     \b(
         # Puste opakowanie — wielojęzyczne
@@ -370,7 +374,6 @@ def classify_tcg(t_f):
     if JAPANESE_RE.search(t_f):
         return None
 
-    # Blokada pustych opakowań i luźnych kart
     if TCG_EMPTY_RE.search(t_f):
         return None
 
@@ -388,8 +391,6 @@ def classify_tcg(t_f):
     if "first partner" in t_f:
         return ("TCG_FIRST_PARTNER", 150)
     if "bundle" in t_f:
-        # Bundle — przepuszcza jeśli ma "booster" LUB wygląda jak sealed produkt
-        # Blokuj tylko jeśli ma sygnały luźnych kart w nazwie zestawu
         return ("TCG_BUNDLE", 150)
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]):
         return ("TCG_MINI_TIN", 50)
@@ -406,11 +407,9 @@ def classify_tcg(t_f):
 def is_interesting_item(title, price):
     t_f = title.lower()
 
-    # 1. Klony
     if CLONE_RE.search(t_f):
         return False, "CLONE"
 
-    # 2. Pokemon TCG — przed PARTS_RE
     if "pokemon" in t_f or "pokémon" in t_f:
         tcg = classify_tcg(t_f)
         if tcg:
@@ -425,8 +424,6 @@ def is_interesting_item(title, price):
         if not has_console:
             return False, "PKMN_JUNK"
 
-    # 3. Sygnał gry — blokada przed kategoryzacją
-    # "gra X na PSP", "na nintendo DS", "X PSP gra" itp.
     GAME_SIGNAL_RE = re.compile(r"""
         \b(
             ^gra\s+|                             # tytuł zaczyna się od "gra"
@@ -440,31 +437,25 @@ def is_interesting_item(title, price):
 
     is_game_signal = bool(GAME_SIGNAL_RE.search(t_f))
 
-    # 4. Ekrany — absolutna blokada
     SCREEN_RE = re.compile(r"\b(ekran|screen|lcd|ecran|display\s*(ips|oled|tft|lcd)?|wyświetlacz)\b", re.I)
     if SCREEN_RE.search(t_f):
         return False, "PART"
 
-    # 5. Sprawdź czy tytuł to konsola (nie gra)
     has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
     has_bundle_signal = bool(BUNDLE_RE.search(t_f))
 
-    # 6. Części — ignoruj jeśli konsola lub bundle z grami
     if not has_konsola_in_title and not has_bundle_signal:
         if PARTS_RE.search(t_f):
             return False, "PART"
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
     elif not has_konsola_in_title and has_bundle_signal:
-        # Bundle gier — ignoruj ładowarki/kable w zestawie
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
     else:
-        # Konsola — ignoruj ładowarki ale blokuj standalone części
         if ADAPTER_MAIN_RE.search(t_f):
             return False, "PART"
 
-    # 7. Kategoria sprzętowa
     hw_cat = None
     if "vita" in t_f: hw_cat = "VITA"
     elif "psp" in t_f: hw_cat = "PSP"
@@ -472,17 +463,14 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
-    # 8. Blokada pojedynczych gier
     if hw_cat:
         if is_game_signal:
-            # Sygnał gry — blokuj chyba że wyraźny bundle
             if not has_bundle_signal:
                 return False, "SINGLE_GAME"
         elif not has_konsola_in_title:
             if not has_bundle_signal:
                 return False, "SINGLE_GAME"
 
-    # 6. Walkman — tylko Sony/Aiwa, blokada Philips i innych
     if not hw_cat:
         if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
             if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
@@ -493,7 +481,6 @@ def is_interesting_item(title, price):
 
     if not hw_cat: return False, "NO_CAT"
 
-    # 7. Limity (twoje oryginalne)
     limits = {
         "PSP":     (50, 200),
         "VITA":    (200, 500),
@@ -522,8 +509,20 @@ def process_item(title, url, price, src, item_id=None):
     valid, res = is_interesting_item(title, price)
     if valid:
         if not IS_FIRST_RUN:
-            msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`\n🔗 [LINK]({clean_url})"
-            send_telegram(msg)
+            msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`"
+
+            # OLX — inline keyboard z deep linkiem do aplikacji + fallback przeglądarka
+            if src == "OLX":
+                olx_id = extract_olx_id(clean_url)
+                keyboard = {"inline_keyboard": [[
+                    {"text": "📱 Otwórz w aplikacji OLX", "url": f"olx://listing/{olx_id}" if olx_id else clean_url},
+                    {"text": "🌐 Przeglądarka", "url": clean_url},
+                ]]}
+                send_telegram(msg, reply_markup=keyboard)
+            else:
+                msg += f"\n🔗 [LINK]({clean_url})"
+                send_telegram(msg)
+
             log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
         if item_id: SENT_IDS.add(item_id)
         save_to_memory(clean_url, content_hash)
@@ -536,57 +535,41 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v69.0 | PS Vita Fix + Game Signal + Bundle+Parts Logic")
+    log_debug("🚀 SNIPER v69.1 | OLX Deep Link")
     vinted_init()
 
-    # Vinted — precyzyjne zapytania po modelach
     Q_V = [
-        # PSP — wszystkie regiony
         "psp fat", "psp slim", "psp go", "psp street", "psp konsola",
         "psp 1000", "psp 1001", "psp 1004",
         "psp 2000", "psp 2001", "psp 2004",
         "psp 3000", "psp 3001", "psp 3004",
         "psp e1000", "psp e1004",
-        # PS Vita — wszystkie regiony
         "ps vita slim", "ps vita konsola",
         "pch-1000", "pch-1001", "pch-1004",
         "pch-1100",
         "pch-2000", "pch-2001", "pch-2004",
-        # 3DS
         "new 3ds xl", "new 3ds ll", "old 3ds xl", "nintendo 3ds xl", "nintendo 3ds ll",
-        # DS
         "nintendo ds lite", "nintendo dsi", "nintendo dsi xl",
-        "nintendo ds",                       # DS fat (pierwsza generacja)
-        # Game Boy
+        "nintendo ds",
         "game boy advance sp", "game boy advance", "game boy color",
         "game boy pocket", "game boy light", "game boy classic",
         "gba sp", "gameboy color", "gameboy advance",
         "gameboy color", "gameboy pocket", "gameboy light",
-        # TCG
         "pokemon etb", "pokemon elite trainer box",
         "pokemon booster box", "pokemon booster bundle",
         "pokemon tin", "pokemon mini tin", "pokemon blister",
-        # Walkman
         "sony walkman", "sony discman", "sony minidisc",
     ]
-    # OLX + Allegro — polskie zapytania po modelach
     Q_PL = [
-        # PSP
         "psp fat", "psp slim", "psp go", "psp street",
         "psp 1004", "psp 2004", "psp 3004", "psp e1004",
-        # PS Vita
         "ps vita konsola", "ps vita slim",
         "pch-1004", "pch-2004",
-        # 3DS
         "nintendo 3ds xl", "new 3ds xl",
-        # DS
         "nintendo ds lite", "nintendo dsi", "nintendo ds",
-        # Game Boy
         "gameboy advance sp", "gameboy advance", "gameboy color",
         "game boy pocket", "game boy classic", "gameboy pocket",
-        # TCG
         "pokemon etb", "pokemon booster box",
-        # Walkman
         "sony walkman", "sony discman",
     ]
 
