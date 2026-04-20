@@ -176,6 +176,13 @@ def scrape_olx(query):
         r = OLX_SESSION.get(url, timeout=15)
         if r.status_code == 200:
             new_count = 0
+            if r.status_code != 200:
+            log_debug(f"❌ OLX ERROR: {r.status_code} dla {query}")
+            return
+        
+        data = r.json().get('data', [])
+        if not data:
+            log_debug(f"❓ OLX pusta odpowiedź dla {query}")
             for o in r.json().get('data', []):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
                 if not p_val: continue
