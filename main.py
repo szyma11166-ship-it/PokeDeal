@@ -253,7 +253,7 @@ PARTS_RE = re.compile(r"""
         \bheadphones?\b|\bsłuchawk|\bearphones?\b|
         # TCG akcesoria — prefix match
         \bakryl\b|\bacrylic\b|\bgablotk|\bcard\s*case\b|\bcard\s*holder\b|
-        \bsleeve\b|\bkoszulk|
+        \bsleeve\b|\bkoszulk|\bcoin|
         # Dyski MiniDisc (bez odtwarzacza) — prefix match
         \brecordable\s*md\b|\bblank\s*md\b|\bkaseta\s*md|\btaśma\s*md\b|
         \bminidisc\s*74\b|\bminidisc\s*80\b|\bmd\s*74\b|\bmd\s*80\b|
