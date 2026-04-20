@@ -213,6 +213,19 @@ def scrape_allegro_lokalnie(query):
 # FILTRY
 # ---------------------------------------------------------------------------
 
+# Miotła na śmieci z wyszukiwarek — omijają logowanie całkowicie
+JUNK_RE = re.compile(r"""
+    \b(
+        ps[1-5]|playstation\s*[1-5]|xbox|xbox\s*360|xbox\s*one|xbox\s*series|
+        wii|wii\s*u|switch|nintendo\s*switch|
+        tur|ładowacz|ciągnik|koparka|silnik|maszyny\s*rolnicze|skrzynia\s*biegów|
+        klacz|koń|
+        pks|pck|pkp|bilet|bilety|kalendarz|kalendarzyk|
+        iveco|mercedes|audi|bmw|suzuki\s*dl|land\s*rover|
+        pc\s*cd|gry\s*pc|gra\s*pc
+    )\b
+""", re.I | re.VERBOSE)
+
 PARTS_RE = re.compile(r"""
     (
         # Ekrany
@@ -407,6 +420,9 @@ def classify_tcg(t_f):
 def is_interesting_item(title, price):
     t_f = title.lower()
 
+    if JUNK_RE.search(t_f):
+        return False, "JUNK_EXCLUDE"
+
     if CLONE_RE.search(t_f):
         return False, "CLONE"
 
@@ -458,7 +474,7 @@ def is_interesting_item(title, price):
 
     hw_cat = None
     if "vita" in t_f: hw_cat = "VITA"
-    elif "psp" in t_f: hw_cat = "PSP"
+    elif any(x in t_f for x in ["psp", "playstation portable"]): hw_cat = "PSP"
     elif "3ds" in t_f: hw_cat = "3DS"
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
@@ -511,7 +527,6 @@ def process_item(title, url, price, src, item_id=None):
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`"
 
-            # OLX — inline keyboard z deep linkiem do aplikacji + fallback przeglądarka
             if src == "OLX":
                 olx_id = extract_olx_id(clean_url)
                 keyboard = {"inline_keyboard": [[
@@ -528,7 +543,8 @@ def process_item(title, url, price, src, item_id=None):
         save_to_memory(clean_url, content_hash)
         return True
     else:
-        log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
+        if res != "JUNK_EXCLUDE":
+            log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
     return False
 
 # ---------------------------------------------------------------------------
