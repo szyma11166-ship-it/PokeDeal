@@ -96,17 +96,24 @@ def is_duplicate(clean_url, content_hash):
         except: pass
     return False
 
+
+# ---------------------------------------------------------------------------
+# HISTORY – FIX zapisu klucza
+# ---------------------------------------------------------------------------
 def save_to_memory(clean_url, content_hash):
-    SENT_CACHE.add(f"{clean_url}_{content_hash}")
+    key = f"{clean_url}_{content_hash}"
+    SENT_CACHE.add(key)
     if r_db:
         try:
-            r_db.setex(f"sent:{content_hash}", 172800, clean_url)
-        except: pass
+            r_db.setex(f"sent:{key}", 172800, clean_url)
+        except:
+            pass
     else:
         try:
             with open(HISTORY_FILE, "a") as f:
-                f.write(f"{clean_url}\n")
-        except: pass
+                f.write(key + "\n")
+        except:
+            pass
 
 # ---------------------------------------------------------------------------
 # VINTED
@@ -134,11 +141,18 @@ def vinted_ensure():
         return vinted_init()
     return True
 
+
 def scrape_vinted(query):
-    if not vinted_ensure(): return
+    if not vinted_ensure():
+        return
     try:
-        url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={urllib.parse.quote_plus(query)}&order=newest_first&per_page=30"
+        url = (
+            f"https://www.vinted.pl/api/v2/catalog/items"
+            f"?search_text={urllib.parse.quote_plus(query)}"
+            f"&order=newest_first&per_page=30"
+        )
         r = VINTED_SESSION.get(url, timeout=20)
+
         if r.status_code in [401, 403]:
             log_debug(f"🔄 Vinted {r.status_code} [{query}] — reset...")
             time.sleep(random.uniform(10, 20))
@@ -164,10 +178,16 @@ def scrape_vinted(query):
     except Exception as e:
         log_debug(f"💥 Błąd Vinted [{query}]: {e}")
 
+
 def scrape_olx(query):
     try:
-        url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=25"
+        url = (
+            f"https://www.olx.pl/api/v1/offers/"
+            f"?query={urllib.parse.quote_plus(query)}"
+            f"&sort_by=created_at:desc&limit=25"
+        )
         r = OLX_SESSION.get(url, timeout=15)
+
         if r.status_code == 200:
             new_count = 0
             for o in r.json().get('data', []):
@@ -389,11 +409,21 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
-    if hw_cat:
+
+    # SCREEN – PART tylko jeśli NIE ma konsoli
+    if SCREEN_RE.search(t_f) and not has_konsola_in_title:
+        return False, "PART"
+
+    # SINGLE_GAME – tylko gdy to FAKTYCZNIE gra
+
+   if hw_cat:
         if is_game_signal:
-            if not has_bundle_signal: return False, "SINGLE_GAME"
+            # konsola + gra = OK
+            if not has_konsola_in_title and not has_bundle_signal:
+                return False, "SINGLE_GAME"
         elif not has_konsola_in_title:
-            if not has_bundle_signal: return False, "SINGLE_GAME"
+            if not has_bundle_signal:
+                return False, "SINGLE_GAME"
 
     if not hw_cat:
         if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
