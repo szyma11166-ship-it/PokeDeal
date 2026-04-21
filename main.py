@@ -60,8 +60,6 @@ VINTED_SESSION.headers.update({
     "X-Requested-With": "XMLHttpRequest"
 })
 
-})
-
 OLX_SESSION = curl_requests.Session(impersonate="chrome120")
 OLX_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
