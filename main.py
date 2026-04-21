@@ -36,11 +36,26 @@ if REDIS_AVAILABLE and REDIS_URL:
 # --- PAMIĘĆ LOKALNA ---
 SENT_CACHE = set()
 SENT_IDS = set()
-IS_FIRST_RUN = True
-VINTED_LAST_INIT = 0
+
+# Flagi pierwszego skanu per źródło — wysyłka aktywna dopiero gdy dane źródło
+# zakończyło swój pierwszy pełny skan (zapamiętało co istnieje)
+FIRST_RUN_VINTED   = True
+FIRST_RUN_OLX      = True
+FIRST_RUN_ALLEGRO  = True
+
+VINTED_LAST_INIT   = 0
 VINTED_INIT_INTERVAL = 2 * 3600
-VINTED_FAIL_COUNT = 0      # licznik nieudanych prób init
-VINTED_BLOCKED_UNTIL = 0   # timestamp do kiedy nie próbujemy
+VINTED_FAIL_COUNT  = 0
+VINTED_BLOCKED_UNTIL = 0
+
+if not r_db and os.path.exists(HISTORY_FILE):
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            for line in f:
+                val = line.strip()
+                if val:
+                    SENT_CACHE.add(val)
+    except: pass
 
 # --- SESJE ---
 VINTED_SESSION = curl_requests.Session(impersonate="chrome120")
@@ -60,15 +75,6 @@ ALLEGRO_SESSION.headers.update({
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "pl-PL,pl;q=0.9",
 })
-
-if not r_db and os.path.exists(HISTORY_FILE):
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            for line in f:
-                val = line.strip()
-                if val:
-                    SENT_CACHE.add(val)
-    except: pass
 
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
@@ -136,7 +142,6 @@ def vinted_init():
             return True
         else:
             VINTED_FAIL_COUNT += 1
-            # Exponential backoff: 5min, 10min, 20min, max 30min
             wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
             VINTED_BLOCKED_UNTIL = time.time() + wait
             log_debug(f"💥 Vinted init: {r.status_code} — czekam {wait//60} min (próba {VINTED_FAIL_COUNT})")
@@ -148,16 +153,18 @@ def vinted_init():
         log_debug(f"💥 Błąd init Vinted: {e} — czekam {wait//60} min")
         return False
 
-def vinted_ensure():
-    # Jeśli zablokowany backoffem — nie próbuj
+def vinted_available():
+    """Zwraca True jeśli Vinted jest dostępny (nie w backoffie)."""
     if time.time() < VINTED_BLOCKED_UNTIL:
+        remaining = int(VINTED_BLOCKED_UNTIL - time.time()) // 60
+        log_debug(f"⏳ Vinted w backoffie — jeszcze ~{remaining} min")
         return False
     if time.time() - VINTED_LAST_INIT > VINTED_INIT_INTERVAL:
         return vinted_init()
     return True
 
-def scrape_vinted(query):
-    if not vinted_ensure(): return
+def scrape_vinted(query, first_run=False):
+    if not vinted_available(): return False
     try:
         url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={urllib.parse.quote_plus(query)}&order=newest_first&per_page=30"
         r = VINTED_SESSION.get(url, timeout=20)
@@ -167,7 +174,7 @@ def scrape_vinted(query):
             if vinted_init():
                 r = VINTED_SESSION.get(url, timeout=20)
             else:
-                return
+                return False
         if r.status_code == 200:
             items = r.json().get("items", [])
             new_count = 0
@@ -179,14 +186,18 @@ def scrape_vinted(query):
                 price = float(p_raw.get("amount", 0)) if isinstance(p_raw, dict) else float(p_raw or 0)
                 item_url = item.get("url", "")
                 if not item_url.startswith("http"): item_url = f"https://www.vinted.pl{item_url}"
-                if process_item(title, item_url, price, "VINTED", item_id=item_id): new_count += 1
-            log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
+                if process_item(title, item_url, price, "VINTED", item_id=item_id, suppress=first_run): new_count += 1
+            if not first_run:
+                log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
+            return True
         else:
             log_debug(f"⚠️ Vinted [{query}]: {r.status_code}")
+            return False
     except Exception as e:
         log_debug(f"💥 Błąd Vinted [{query}]: {e}")
+        return False
 
-def scrape_olx(query):
+def scrape_olx(query, first_run=False):
     try:
         url = f"https://www.olx.pl/api/v1/offers/?query={urllib.parse.quote_plus(query)}&sort_by=created_at:desc&limit=25"
         r = OLX_SESSION.get(url, timeout=15)
@@ -196,18 +207,24 @@ def scrape_olx(query):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
                 if not p_val: continue
                 olx_id = f"olx_{o.get('id', '')}"
-                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id): new_count += 1
-            log_debug(f"✅ OLX [{query}]: nowych {new_count}")
+                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id, suppress=first_run): new_count += 1
+            if not first_run:
+                log_debug(f"✅ OLX [{query}]: nowych {new_count}")
+            return True
         else:
             log_debug(f"⚠️ OLX [{query}]: {r.status_code}")
+            return False
     except Exception as e:
         log_debug(f"💥 Błąd OLX [{query}]: {e}")
+        return False
 
-def scrape_allegro_lokalnie(query):
+def scrape_allegro_lokalnie(query, first_run=False):
     try:
         url = f"https://allegrolokalnie.pl/oferty?phrase={urllib.parse.quote_plus(query)}&sort=createdAt-desc"
         r = ALLEGRO_SESSION.get(url, timeout=20)
-        if r.status_code != 200: return
+        if r.status_code != 200:
+            log_debug(f"⚠️ Allegro [{query}]: {r.status_code}")
+            return False
         soup = BeautifulSoup(r.text, "html.parser")
         new_count = 0
         items = soup.select("article[data-testid='listing-ad'], div[class*='mlc-itemcard'], article[class*='offer-card']")
@@ -220,12 +237,15 @@ def scrape_allegro_lokalnie(query):
                 title_el = item.find(["h2", "h3", "span"], class_=re.compile(r"title|name|heading", re.I))
                 title = title_el.get_text(strip=True) if title_el else item.get_text(separator=" ")[:60]
                 price_match = re.search(r"(\d[\d\s]*(?:[,\.]\d{1,2})?)\s*zł", item.get_text(separator=" "))
-                if price_match and process_item(title.strip(), item_url, float(price_match.group(1).replace(" ", "").replace(",", ".")), "ALLEGRO"):
+                if price_match and process_item(title.strip(), item_url, float(price_match.group(1).replace(" ", "").replace(",", ".")), "ALLEGRO", suppress=first_run):
                     new_count += 1
             except: continue
-        log_debug(f"✅ Allegro [{query}]: nowych {new_count}")
+        if not first_run:
+            log_debug(f"✅ Allegro [{query}]: nowych {new_count}")
+        return True
     except Exception as e:
         log_debug(f"💥 Błąd Allegro [{query}]: {e}")
+        return False
 
 # ---------------------------------------------------------------------------
 # FILTRY
@@ -339,7 +359,6 @@ def classify_tcg(t_f):
     if "pokemon" not in t_f and "pokémon" not in t_f: return None
     if JAPANESE_RE.search(t_f): return None
     if TCG_EMPTY_RE.search(t_f): return None
-    # Blokada chińskich wersji
     if any(x in t_f for x in ["chiński", "chińskie", "chinese", "chin "]): return None
     sealed_keywords = [
         "etb", "elite trainer", "booster box", "display", "bundle",
@@ -366,7 +385,6 @@ def is_interesting_item(title, price):
     if CLONE_RE.search(t_f): return False, "CLONE"
     if MERCH_RE.search(t_f): return False, "MERCH"
 
-    # Pokemon TCG — przed PARTS_RE
     if "pokemon" in t_f or "pokémon" in t_f:
         tcg = classify_tcg(t_f)
         if tcg:
@@ -411,7 +429,7 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
-    # FIX: "Sony PSP" samo w sobie to konsola — nie blokuj jako SINGLE_GAME
+    # "Sony PSP" / "PSP" samo w sobie to konsola
     if hw_cat == "PSP" and re.match(r'^(sony\s+)?psp\s*\d*\s*$', t_f.strip()):
         has_konsola_in_title = True
 
@@ -445,9 +463,7 @@ def is_interesting_item(title, price):
 # ---------------------------------------------------------------------------
 # PROCESS ITEM
 # ---------------------------------------------------------------------------
-def process_item(title, url, price, src, item_id=None):
-    global IS_FIRST_RUN
-
+def process_item(title, url, price, src, item_id=None, suppress=False):
     if item_id and item_id in SENT_IDS: return False
 
     clean_url = url.split("?")[0].rstrip("/")
@@ -457,7 +473,8 @@ def process_item(title, url, price, src, item_id=None):
 
     valid, res = is_interesting_item(title, price)
     if valid:
-        if not IS_FIRST_RUN:
+        # suppress=True podczas pierwszego skanu — zapamiętaj ale nie wysyłaj
+        if not suppress:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {escape_md(title[:70])}\n💰 `{price:.2f} zł`"
             if src == "OLX":
                 olx_id = extract_olx_id(clean_url)
@@ -474,7 +491,7 @@ def process_item(title, url, price, src, item_id=None):
         save_to_memory(clean_url, content_hash)
         return True
     else:
-        if res != "JUNK_EXCLUDE":
+        if res != "JUNK_EXCLUDE" and not suppress:
             log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
     return False
 
@@ -482,7 +499,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v71.1 | Vinted backoff + escape_md + PSP fix + TCG chiński")
+    log_debug("🚀 SNIPER v72.0 | Per-source first-run + Vinted backoff")
     vinted_init()
 
     Q_V = [
@@ -530,16 +547,33 @@ if __name__ == "__main__":
         random.shuffle(v_list)
         random.shuffle(pl_list)
 
+        # --- VINTED ---
+        vinted_ok = False
         for q_v in v_list:
-            scrape_vinted(q_v)
+            ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
+            if ok: vinted_ok = True
             time.sleep(random.uniform(4, 8))
+        if vinted_ok and FIRST_RUN_VINTED:
+            FIRST_RUN_VINTED = False
+            log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
 
+        # --- OLX + ALLEGRO ---
+        olx_ok = False
+        allegro_ok = False
         for q_pl in pl_list:
-            scrape_olx(q_pl)
+            ok_olx = scrape_olx(q_pl, first_run=FIRST_RUN_OLX)
+            if ok_olx: olx_ok = True
             time.sleep(random.uniform(2, 4))
-            scrape_allegro_lokalnie(q_pl)
+            ok_al = scrape_allegro_lokalnie(q_pl, first_run=FIRST_RUN_ALLEGRO)
+            if ok_al: allegro_ok = True
             time.sleep(random.uniform(3, 5))
 
-        IS_FIRST_RUN = False
+        if olx_ok and FIRST_RUN_OLX:
+            FIRST_RUN_OLX = False
+            log_debug("✅ OLX — pierwszy skan zakończony, powiadomienia aktywne")
+        if allegro_ok and FIRST_RUN_ALLEGRO:
+            FIRST_RUN_ALLEGRO = False
+            log_debug("✅ Allegro — pierwszy skan zakończony, powiadomienia aktywne")
+
         log_debug("💤 Przerwa 5 min.")
         time.sleep(300)
