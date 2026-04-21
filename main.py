@@ -300,6 +300,7 @@ CONSOLE_MAIN_RE = re.compile(r"""
         konsola|console|handheld|playstation\s*portable|
         konsol\b|konsolę|konsoli|konzol\b|konzole\b|
         consolă\b|consola\b|spielkonsole\b|pelikonsoli\b|spelkonsol\b|
+        \bpsp\b|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
         psp[-\s]?\d{4}|psp[-\s]?e\d{4}|psp[-\s]?\d{4}[a-z]|sony\s*e\d{4}|
         ps\s*vita\b|psvita\b|playstation\s*vita\b|pch-?\d{4}|
