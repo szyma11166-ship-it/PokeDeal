@@ -56,6 +56,10 @@ VINTED_SESSION.headers.update({
     "Accept-Language": "pl-PL,pl;q=0.9",
     "Referer": "https://www.vinted.pl/catalog",
     "Origin": "https://www.vinted.pl",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "X-Requested-With": "XMLHttpRequest"
+})
+
 })
 
 OLX_SESSION = curl_requests.Session(impersonate="chrome120")
@@ -114,20 +118,26 @@ def save_to_memory(clean_url, content_hash):
 def vinted_init():
     global VINTED_LAST_INIT
     try:
-        log_debug("🔄 Inicjalizuję sesję Vinted...")
-        chosen = random.choice(["chrome120", "chrome116", "safari15_5", "edge101"])
+        log_debug("🔄 Inicjalizuję sesję Vinted (nowy proces)...")
+        # Wybierz stały model przeglądarki dla danej sesji
+        chosen = "chrome120" 
         VINTED_SESSION.impersonate = chosen
         VINTED_SESSION.cookies.clear()
-        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
-        if r.status_code == 200:
-            log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
+        
+        # 1. Wejdź najpierw na stronę główną, aby pobrać ciasteczka
+        main_page = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        time.sleep(random.uniform(2, 5)) # Udawaj czas na wczytanie
+        
+        # 2. Wyślij zapytanie o token/auth (Vinted często tego wymaga przed API)
+        if main_page.status_code == 200:
+            log_debug(f"✅ Sesja Vinted gotowa")
             VINTED_LAST_INIT = time.time()
             return True
-        log_debug(f"💥 Vinted init: {r.status_code}")
         return False
     except Exception as e:
         log_debug(f"💥 Błąd init Vinted: {e}")
         return False
+
 
 def vinted_ensure():
     if time.time() - VINTED_LAST_INIT > VINTED_INIT_INTERVAL:
