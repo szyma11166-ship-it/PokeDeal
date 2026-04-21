@@ -174,7 +174,11 @@ def scrape_olx(query):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
                 if not p_val: continue
                 olx_id = f"olx_{o.get('id', '')}"
-                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id): new_count += 1
+                
+                item_url = o.get('url', '')
+                if not item_url.startswith("http"): item_url = f"https://www.olx.pl{item_url}"
+
+                if process_item(o['title'], item_url, float(p_val), "OLX", item_id=olx_id): new_count += 1
             log_debug(f"✅ OLX [{query}]: nowych {new_count}")
         else:
             log_debug(f"⚠️ OLX [{query}]: {r.status_code}")
@@ -436,8 +440,10 @@ def process_item(title, url, price, src, item_id=None):
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`"
             if src == "OLX":
                 olx_id = extract_olx_id(clean_url)
+                # POPRAWKA TELEGRAM API: Telegram blokuje protokoły jak olx:// - trzeba użyć http/https (clean_url).
+                # Aplikacja OLX w telefonie i tak automatycznie przechwyci czysty link i go u siebie otworzy.
                 keyboard = {"inline_keyboard": [[
-                    {"text": "📱 Otwórz w aplikacji OLX", "url": f"olx://listing/{olx_id}" if olx_id else clean_url},
+                    {"text": "📱 Otwórz w aplikacji OLX", "url": clean_url},
                     {"text": "🌐 Przeglądarka", "url": clean_url},
                 ]]}
                 send_telegram(msg, reply_markup=keyboard)
