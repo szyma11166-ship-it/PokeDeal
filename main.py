@@ -1,4 +1,4 @@
-From curl_cffi import requests as curl_requests
+from curl_cffi import requests as curl_requests
 import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os, json
