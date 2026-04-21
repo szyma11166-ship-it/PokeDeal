@@ -39,15 +39,8 @@ SENT_IDS = set()
 IS_FIRST_RUN = True
 VINTED_LAST_INIT = 0
 VINTED_INIT_INTERVAL = 2 * 3600
-
-if not r_db and os.path.exists(HISTORY_FILE):
-    try:
-        with open(HISTORY_FILE, "r") as f:
-            for line in f:
-                val = line.strip()
-                if val:
-                    SENT_CACHE.add(val)
-    except: pass
+VINTED_FAIL_COUNT = 0      # licznik nieudanych prób init
+VINTED_BLOCKED_UNTIL = 0   # timestamp do kiedy nie próbujemy
 
 # --- SESJE ---
 VINTED_SESSION = curl_requests.Session(impersonate="chrome120")
@@ -56,8 +49,6 @@ VINTED_SESSION.headers.update({
     "Accept-Language": "pl-PL,pl;q=0.9",
     "Referer": "https://www.vinted.pl/catalog",
     "Origin": "https://www.vinted.pl",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "X-Requested-With": "XMLHttpRequest"
 })
 
 OLX_SESSION = curl_requests.Session(impersonate="chrome120")
@@ -70,12 +61,24 @@ ALLEGRO_SESSION.headers.update({
     "Accept-Language": "pl-PL,pl;q=0.9",
 })
 
+if not r_db and os.path.exists(HISTORY_FILE):
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            for line in f:
+                val = line.strip()
+                if val:
+                    SENT_CACHE.add(val)
+    except: pass
+
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
 def extract_olx_id(url):
     match = re.search(r'-ID([a-zA-Z0-9]+)\.html', url)
     return match.group(1) if match else None
+
+def escape_md(text):
+    return re.sub(r'([_*\[\]`])', r'\\\1', text)
 
 def send_telegram(msg, reply_markup=None):
     try:
@@ -86,8 +89,12 @@ def send_telegram(msg, reply_markup=None):
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             data=payload, timeout=15
         )
+        if r.status_code != 200:
+            log_debug(f"⚠️ Telegram błąd {r.status_code}: {r.text[:100]}")
         return r.status_code == 200
-    except: return False
+    except Exception as e:
+        log_debug(f"💥 Telegram wyjątek: {e}")
+        return False
 
 def is_duplicate(clean_url, content_hash):
     key = f"{clean_url}_{content_hash}"
@@ -114,30 +121,37 @@ def save_to_memory(clean_url, content_hash):
 # VINTED
 # ---------------------------------------------------------------------------
 def vinted_init():
-    global VINTED_LAST_INIT
+    global VINTED_LAST_INIT, VINTED_FAIL_COUNT, VINTED_BLOCKED_UNTIL
     try:
-        log_debug("🔄 Inicjalizuję sesję Vinted (nowy proces)...")
-        # Wybierz stały model przeglądarki dla danej sesji
-        chosen = "chrome120" 
+        log_debug("🔄 Inicjalizuję sesję Vinted...")
+        chosen = random.choice(["chrome120", "chrome116", "safari15_5", "edge101"])
         VINTED_SESSION.impersonate = chosen
         VINTED_SESSION.cookies.clear()
-        
-        # 1. Wejdź najpierw na stronę główną, aby pobrać ciasteczka
-        main_page = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
-        time.sleep(random.uniform(2, 5)) # Udawaj czas na wczytanie
-        
-        # 2. Wyślij zapytanie o token/auth (Vinted często tego wymaga przed API)
-        if main_page.status_code == 200:
-            log_debug(f"✅ Sesja Vinted gotowa")
+        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        if r.status_code == 200:
+            log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
             VINTED_LAST_INIT = time.time()
+            VINTED_FAIL_COUNT = 0
+            VINTED_BLOCKED_UNTIL = 0
             return True
-        return False
+        else:
+            VINTED_FAIL_COUNT += 1
+            # Exponential backoff: 5min, 10min, 20min, max 30min
+            wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
+            VINTED_BLOCKED_UNTIL = time.time() + wait
+            log_debug(f"💥 Vinted init: {r.status_code} — czekam {wait//60} min (próba {VINTED_FAIL_COUNT})")
+            return False
     except Exception as e:
-        log_debug(f"💥 Błąd init Vinted: {e}")
+        VINTED_FAIL_COUNT += 1
+        wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
+        VINTED_BLOCKED_UNTIL = time.time() + wait
+        log_debug(f"💥 Błąd init Vinted: {e} — czekam {wait//60} min")
         return False
-
 
 def vinted_ensure():
+    # Jeśli zablokowany backoffem — nie próbuj
+    if time.time() < VINTED_BLOCKED_UNTIL:
+        return False
     if time.time() - VINTED_LAST_INIT > VINTED_INIT_INTERVAL:
         return vinted_init()
     return True
@@ -182,11 +196,7 @@ def scrape_olx(query):
                 p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
                 if not p_val: continue
                 olx_id = f"olx_{o.get('id', '')}"
-                
-                item_url = o.get('url', '')
-                if not item_url.startswith("http"): item_url = f"https://www.olx.pl{item_url}"
-
-                if process_item(o['title'], item_url, float(p_val), "OLX", item_id=olx_id): new_count += 1
+                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id): new_count += 1
             log_debug(f"✅ OLX [{query}]: nowych {new_count}")
         else:
             log_debug(f"⚠️ OLX [{query}]: {r.status_code}")
@@ -242,7 +252,6 @@ PARTS_RE = re.compile(r"""
     )
 """, re.I | re.VERBOSE)
 
-# Gadżety i merchandising — absolutna blokada
 MERCH_RE = re.compile(r"""
     \b(
         lampka|lamp\b|paladone|
@@ -289,7 +298,7 @@ BUNDLE_RE = re.compile(r"""
 
 CONSOLE_MAIN_RE = re.compile(r"""
     \b(
-        konsola|console|handheld|playstation\s*portable|
+        konsola|console|handheld|playstation\s*portable|portabil\b|
         konsol\b|konsolę|konsoli|konzol\b|konzole\b|
         consolă\b|consola\b|spielkonsole\b|pelikonsoli\b|spelkonsol\b|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
@@ -330,6 +339,8 @@ def classify_tcg(t_f):
     if "pokemon" not in t_f and "pokémon" not in t_f: return None
     if JAPANESE_RE.search(t_f): return None
     if TCG_EMPTY_RE.search(t_f): return None
+    # Blokada chińskich wersji
+    if any(x in t_f for x in ["chiński", "chińskie", "chinese", "chin "]): return None
     sealed_keywords = [
         "etb", "elite trainer", "booster box", "display", "bundle",
         "tin", "blister", "first partner", "collection box",
@@ -379,7 +390,6 @@ def is_interesting_item(title, price):
     """, re.I | re.VERBOSE)
     is_game_signal = bool(GAME_SIGNAL_RE.search(t_f))
 
-    # Ekran — absolutna blokada
     SCREEN_RE = re.compile(r"\b(ekran|screen|lcd|ecran|display\s*(ips|oled|tft|lcd)?|wyświetlacz)\b", re.I)
     if SCREEN_RE.search(t_f): return False, "PART"
 
@@ -401,6 +411,10 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
+    # FIX: "Sony PSP" samo w sobie to konsola — nie blokuj jako SINGLE_GAME
+    if hw_cat == "PSP" and re.match(r'^(sony\s+)?psp\s*\d*\s*$', t_f.strip()):
+        has_konsola_in_title = True
+
     if hw_cat:
         if is_game_signal:
             if not has_bundle_signal: return False, "SINGLE_GAME"
@@ -416,14 +430,13 @@ def is_interesting_item(title, price):
 
     if not hw_cat: return False, "NO_CAT"
 
-    # Limity cenowe zaktualizowane na podstawie analizy logów
     limits = {
-        "PSP":     (50,  200),   # było 200 — realne oferty 290–560 zł
-        "VITA":    (150, 500),   # było 500 — realne oferty 550–950 zł
-        "3DS":     (100, 500),   # było 500 — margines na zestawy
-        "DS":      (50,  170),   # było 170 — DS Lite realnie 180–350 zł
-        "RETRO":   (50,  250),   # było 250 — GBA SP/GBC realnie do 300 zł
-        "WALKMAN": (35,  100),   # było 100 — Walkman realnie do 150 zł
+        "PSP":     (50, 200),
+        "VITA":    (150, 500),
+        "3DS":     (100, 500),
+        "DS":      (50, 170),
+        "RETRO":   (50, 250),
+        "WALKMAN": (35, 100),
     }
     lo, hi = limits.get(hw_cat, (50, 1000))
     if lo <= price <= hi: return True, hw_cat
@@ -445,9 +458,17 @@ def process_item(title, url, price, src, item_id=None):
     valid, res = is_interesting_item(title, price)
     if valid:
         if not IS_FIRST_RUN:
-            msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`"
-            msg += f"\n🔗 [LINK]({clean_url})"
-            send_telegram(msg)
+            msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {escape_md(title[:70])}\n💰 `{price:.2f} zł`"
+            if src == "OLX":
+                olx_id = extract_olx_id(clean_url)
+                keyboard = {"inline_keyboard": [[
+                    {"text": "📱 Otwórz w aplikacji OLX", "url": f"olx://listing/{olx_id}" if olx_id else clean_url},
+                    {"text": "🌐 Przeglądarka", "url": clean_url},
+                ]]}
+                send_telegram(msg, reply_markup=keyboard)
+            else:
+                msg += f"\n🔗 [LINK]({clean_url})"
+                send_telegram(msg)
             log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
         if item_id: SENT_IDS.add(item_id)
         save_to_memory(clean_url, content_hash)
@@ -461,7 +482,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v71.0 | Nowe limity cenowe + bugfixy")
+    log_debug("🚀 SNIPER v71.1 | Vinted backoff + escape_md + PSP fix + TCG chiński")
     vinted_init()
 
     Q_V = [
