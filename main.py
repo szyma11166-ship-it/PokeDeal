@@ -443,7 +443,6 @@ def process_item(title, url, price, src, item_id=None):
                 # POPRAWKA TELEGRAM API: Telegram blokuje protokoły jak olx:// - trzeba użyć http/https (clean_url).
                 # Aplikacja OLX w telefonie i tak automatycznie przechwyci czysty link i go u siebie otworzy.
                 keyboard = {"inline_keyboard": [[
-                    {"text": "📱 Otwórz w aplikacji OLX", "url": clean_url},
                     {"text": "🌐 Przeglądarka", "url": clean_url},
                 ]]}
                 send_telegram(msg, reply_markup=keyboard)
