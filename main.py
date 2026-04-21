@@ -1,4 +1,4 @@
-from curl_cffi import requests as curl_requests
+From curl_cffi import requests as curl_requests
 import requests
 from bs4 import BeautifulSoup
 import re, time, random, hashlib, os, json
@@ -438,17 +438,8 @@ def process_item(title, url, price, src, item_id=None):
     if valid:
         if not IS_FIRST_RUN:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {title[:70]}\n💰 `{price:.2f} zł`"
-            if src == "OLX":
-                olx_id = extract_olx_id(clean_url)
-                # POPRAWKA TELEGRAM API: Telegram blokuje protokoły jak olx:// - trzeba użyć http/https (clean_url).
-                # Aplikacja OLX w telefonie i tak automatycznie przechwyci czysty link i go u siebie otworzy.
-                keyboard = {"inline_keyboard": [[
-                    {"text": "🌐 Przeglądarka", "url": clean_url},
-                ]]}
-                send_telegram(msg, reply_markup=keyboard)
-            else:
-                msg += f"\n🔗 [LINK]({clean_url})"
-                send_telegram(msg)
+            msg += f"\n🔗 [LINK]({clean_url})"
+            send_telegram(msg)
             log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
         if item_id: SENT_IDS.add(item_id)
         save_to_memory(clean_url, content_hash)
