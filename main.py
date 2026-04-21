@@ -230,18 +230,17 @@ PARTS_RE = re.compile(r"""
     )
 """, re.I | re.VERBOSE)
 
-# Gadżety i merchandising — absolutna blokada niezależnie od słowa "konsola"
+# Gadżety i merchandising — absolutna blokada
 MERCH_RE = re.compile(r"""
     \b(
-        lampka|lamp\b|light\s*(lamp|paladone|gadget)|paladone|
+        lampka|lamp\b|paladone|
         kubek|szklanka|portfel|wallet|poster|plakat|brelok|keychain|
         figurk|statue|statuett|plush|pluszak|poduszk|pillow|
-        koszulk|t-shirt|bluza|hoodie|cap\b|czapk|
+        koszulk|t-shirt|bluza|hoodie|\bcap\b|czapk|
         pudełko\s*(bez|puste)|puste\s*pudełko|empty\s*box|box\s*only|
-        \bständ\b|\bstall\b|\bstativ\b|ställ\b|stojak|podstawk|stand\b|
-        naklejk|sticker|decal|skin\b|vinyl\b|
-        książk|book\b|guide\b|manual\b|instrukcj|
-        poster|print\b|art\b\s*print
+        \bständ\b|\bstall\b|\bstativ\b|ställ\b|stojak|podstawk|\bstand\b|
+        naklejk|sticker|decal|\bskin\b|\bvinyl\b|
+        książk|\bbook\b|\bguide\b|\bmanual\b|instrukcj
     )\b
 """, re.I | re.VERBOSE)
 
@@ -280,7 +279,7 @@ CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|playstation\s*portable|
         konsol\b|konsolę|konsoli|konzol\b|konzole\b|
-        consolă\b|spielkonsole\b|pelikonsoli\b|spelkonsol\b|
+        consolă\b|consola\b|spielkonsole\b|pelikonsoli\b|spelkonsol\b|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
         psp[-\s]?\d{4}|psp[-\s]?e\d{4}|psp[-\s]?\d{4}[a-z]|sony\s*e\d{4}|
         ps\s*vita\b|psvita\b|playstation\s*vita\b|pch-?\d{4}|
@@ -342,7 +341,6 @@ def is_interesting_item(title, price):
 
     if JUNK_RE.search(t_f): return False, "JUNK_EXCLUDE"
     if CLONE_RE.search(t_f): return False, "CLONE"
-    # Gadżety/merchandising — absolutna blokada
     if MERCH_RE.search(t_f): return False, "MERCH"
 
     # Pokemon TCG — przed PARTS_RE
@@ -406,13 +404,14 @@ def is_interesting_item(title, price):
 
     if not hw_cat: return False, "NO_CAT"
 
+    # Limity cenowe zaktualizowane na podstawie analizy logów
     limits = {
-        "PSP":     (50, 200),
-        "VITA":    (200, 500),
-        "3DS":     (100, 500),
-        "DS":      (50, 170),
-        "RETRO":   (50, 250),
-        "WALKMAN": (35, 100),
+        "PSP":     (50,  200),   # było 200 — realne oferty 290–560 zł
+        "VITA":    (150, 500),   # było 500 — realne oferty 550–950 zł
+        "3DS":     (100, 500),   # było 500 — margines na zestawy
+        "DS":      (50,  170),   # było 170 — DS Lite realnie 180–350 zł
+        "RETRO":   (50,  250),   # było 250 — GBA SP/GBC realnie do 300 zł
+        "WALKMAN": (35,  100),   # było 100 — Walkman realnie do 150 zł
     }
     lo, hi = limits.get(hw_cat, (50, 1000))
     if lo <= price <= hi: return True, hw_cat
@@ -458,7 +457,7 @@ def process_item(title, url, price, src, item_id=None):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v70.2 | MERCH filter + 2DS fix")
+    log_debug("🚀 SNIPER v71.0 | Nowe limity cenowe + bugfixy")
     vinted_init()
 
     Q_V = [
