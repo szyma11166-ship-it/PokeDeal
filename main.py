@@ -416,7 +416,7 @@ def is_interesting_item(title, price):
 
     # SINGLE_GAME – tylko gdy to FAKTYCZNIE gra
 
-   if hw_cat:
+    if hw_cat:
         if is_game_signal:
             # konsola + gra = OK
             if not has_konsola_in_title and not has_bundle_signal:
