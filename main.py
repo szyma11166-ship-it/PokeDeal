@@ -33,19 +33,15 @@ if REDIS_AVAILABLE and REDIS_URL:
         print(f"⚠️ Redis niedostępny: {e} — fallback na plik")
         r_db = None
 
-# --- PAMIĘĆ LOKALNA ---
+# --- PAMIĘĆ ---
 SENT_CACHE = set()
 SENT_IDS = set()
-
-# Flagi pierwszego skanu per źródło — wysyłka aktywna dopiero gdy dane źródło
-# zakończyło swój pierwszy pełny skan (zapamiętało co istnieje)
-FIRST_RUN_VINTED   = True
-FIRST_RUN_OLX      = True
-FIRST_RUN_ALLEGRO  = True
-
-VINTED_LAST_INIT   = 0
+FIRST_RUN_VINTED  = True
+FIRST_RUN_OLX     = True
+FIRST_RUN_ALLEGRO = True
+VINTED_LAST_INIT  = 0
 VINTED_INIT_INTERVAL = 2 * 3600
-VINTED_FAIL_COUNT  = 0
+VINTED_FAIL_COUNT = 0
 VINTED_BLOCKED_UNTIL = 0
 
 if not r_db and os.path.exists(HISTORY_FILE):
@@ -53,8 +49,7 @@ if not r_db and os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
             for line in f:
                 val = line.strip()
-                if val:
-                    SENT_CACHE.add(val)
+                if val: SENT_CACHE.add(val)
     except: pass
 
 # --- SESJE ---
@@ -154,7 +149,6 @@ def vinted_init():
         return False
 
 def vinted_available():
-    """Zwraca True jeśli Vinted jest dostępny (nie w backoffie)."""
     if time.time() < VINTED_BLOCKED_UNTIL:
         remaining = int(VINTED_BLOCKED_UNTIL - time.time()) // 60
         log_debug(f"⏳ Vinted w backoffie — jeszcze ~{remaining} min")
@@ -272,13 +266,14 @@ PARTS_RE = re.compile(r"""
     )
 """, re.I | re.VERBOSE)
 
+# FIX 1: dodano samo \bpudełko\b
 MERCH_RE = re.compile(r"""
     \b(
         lampka|lamp\b|paladone|
         kubek|szklanka|portfel|wallet|poster|plakat|brelok|keychain|
         figurk|statue|statuett|plush|pluszak|poduszk|pillow|
         koszulk|t-shirt|bluza|hoodie|\bcap\b|czapk|
-        pudełko\s*(bez|puste)|puste\s*pudełko|empty\s*box|box\s*only|
+        pudełko|puste\s*pudełko|empty\s*box|box\s*only|
         \bständ\b|\bstall\b|\bstativ\b|ställ\b|stojak|podstawk|\bstand\b|
         naklejk|sticker|decal|\bskin\b|\bvinyl\b|
         książk|\bbook\b|\bguide\b|\bmanual\b|instrukcj
@@ -333,6 +328,16 @@ CONSOLE_MAIN_RE = re.compile(r"""
         gba\s*sp|\bgbc\b|\bgba\b
     )\b
 """, re.I | re.VERBOSE)
+
+# FIX 2: tytuł ZACZYNA SIĘ od producenta/platformy → to konsola, nie gra
+STARTS_WITH_PLATFORM_RE = re.compile(
+    r'^(sony|nintendo|sega|atari|'
+    r'psp|ps\s*vita|playstation(\s*(portable|vita))?|'
+    r'game\s*boy|gameboy|gba\s*sp|gba\b|gbc\b|'
+    r'3ds|2ds|dsi|ds\s*lite|'
+    r'new\s*3ds|old\s*3ds)',
+    re.I
+)
 
 TCG_EMPTY_RE = re.compile(r"""
     \b(
@@ -414,6 +419,10 @@ def is_interesting_item(title, price):
     has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
     has_bundle_signal = bool(BUNDLE_RE.search(t_f))
 
+    # FIX 2: tytuł zaczyna się od platformy/producenta → traktuj jako konsolę
+    if STARTS_WITH_PLATFORM_RE.match(t_f.strip()):
+        has_konsola_in_title = True
+
     if not has_konsola_in_title and not has_bundle_signal:
         if PARTS_RE.search(t_f): return False, "PART"
         if ADAPTER_MAIN_RE.search(t_f): return False, "PART"
@@ -428,10 +437,6 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["3ds", "2ds"]): hw_cat = "3DS"
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
-
-    # "Sony PSP" / "PSP" samo w sobie to konsola
-    if hw_cat == "PSP" and re.match(r'^(sony\s+)?psp\s*\d*\s*$', t_f.strip()):
-        has_konsola_in_title = True
 
     if hw_cat:
         if is_game_signal:
@@ -473,7 +478,6 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
 
     valid, res = is_interesting_item(title, price)
     if valid:
-        # suppress=True podczas pierwszego skanu — zapamiętaj ale nie wysyłaj
         if not suppress:
             msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {escape_md(title[:70])}\n💰 `{price:.2f} zł`"
             if src == "OLX":
@@ -499,7 +503,7 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v72.0 | Per-source first-run + Vinted backoff")
+    log_debug("🚀 SNIPER v72.1 | pudełko fix + starts_with_platform + portabil")
     vinted_init()
 
     Q_V = [
@@ -547,7 +551,6 @@ if __name__ == "__main__":
         random.shuffle(v_list)
         random.shuffle(pl_list)
 
-        # --- VINTED ---
         vinted_ok = False
         for q_v in v_list:
             ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
@@ -557,7 +560,6 @@ if __name__ == "__main__":
             FIRST_RUN_VINTED = False
             log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
 
-        # --- OLX + ALLEGRO ---
         olx_ok = False
         allegro_ok = False
         for q_pl in pl_list:
