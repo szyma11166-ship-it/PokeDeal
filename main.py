@@ -244,6 +244,7 @@ def scrape_allegro_lokalnie(query, first_run=False):
 # ---------------------------------------------------------------------------
 # FILTRY
 # ---------------------------------------------------------------------------
+
 PARTS_RE = re.compile(r"""
     (
         \bekran\b|\bscreen\b|\blcd\b|
@@ -262,29 +263,34 @@ PARTS_RE = re.compile(r"""
         \bakryl\b|\bacrylic\b|\bgablotk|\bcard\s*case\b|\bcard\s*holder\b|
         \bsleeve\b|\bkoszulk|\bcoin\b|
         \brecordable\s*md\b|\bblank\s*md\b|\bkaseta\s*md|\btaśma\s*md\b|
-        \bminidisc\s*74\b|\bminidisc\s*80\b|\bmd\s*74\b|\bmd\s*80\b
+        \bminidisc\s*74\b|\bminidisc\s*80\b|\bmd\s*74\b|\bmd\s*80\b|
+        \bkarta\s*pamięci\b|\bmemory\s*card\b|\bmicrosd\b|\bmicro\s*sd\b|
+        \bms\s*pro\b|\bpro\s*duo\b|\bpro-duo\b
     )
 """, re.I | re.VERBOSE)
 
-# FIX 1: dodano samo \bpudełko\b
 MERCH_RE = re.compile(r"""
     \b(
         lampka|lamp\b|paladone|
         kubek|szklanka|portfel|wallet|poster|plakat|brelok|keychain|
         figurk|statue|statuett|plush|pluszak|poduszk|pillow|
-        koszulk|t-shirt|bluza|hoodie|\bcap\b|czapk|
+        koszulk|t[\s\-]*shirt|bluza|hoodie|\bcap\b|czapk|
         pudełko|puste\s*pudełko|empty\s*box|box\s*only|
         \bständ\b|\bstall\b|\bstativ\b|ställ\b|stojak|podstawk|\bstand\b|
         naklejk|sticker|decal|\bskin\b|\bvinyl\b|
-        książk|\bbook\b|\bguide\b|\bmanual\b|instrukcj
+        książk|\bbook\b|\bguide\b|\bmanual\b|instrukcj|
+        amiibo|puzzle\b
     )\b
 """, re.I | re.VERBOSE)
 
 ADAPTER_MAIN_RE = re.compile(r"^(adapter|zasilacz|ac\s*adapter|power\s*adapter|przejściówka)\b", re.I)
 PHONE_WALKMAN_RE = re.compile(r"\b(ericsson|xperia|nokia|samsung|iphone|motorola|htc|huawei|xiaomi)\b", re.I)
-CLONE_RE = re.compile(r"\b(r36s?|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+|rgb\d+|rgxx|rg cube|gameforce|pxp|sup\s*game|retromini|bittboy|pocketgo)\b", re.I)
+CLONE_RE = re.compile(r"\b(r36s?|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+|rgb\d+|rgxx|rg cube|gameforce|pxp|sup\s*game|retromini|bittboy|pocketgo|r36h)\b", re.I)
 DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo|dictaphone|diktafon)\b", re.I)
 JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed|nihon|nippon|\bjp\b(?=\s*(ver|ed|version|edition)))\b", re.I)
+
+# Sony aparat cyfrowy DSC — blokada przed Walkman
+SONY_CAMERA_RE = re.compile(r"\bsony\s+dsc[-\s]", re.I)
 
 JUNK_RE = re.compile(r"""
     \b(
@@ -293,7 +299,10 @@ JUNK_RE = re.compile(r"""
         tur|ładowacz|ciągnik|koparka|silnik|maszyny\s*rolnicze|skrzynia\s*biegów|
         klacz|koń|pks|pck|pkp|bilet|bilety|kalendarz|
         iveco|mercedes|audi|bmw|land\s*rover|
-        pc\s*cd|gry\s*pc|gra\s*pc
+        pc\s*cd|gry\s*pc|gra\s*pc|
+        suszarka|pralka|lodówka|zmywarka|odkurzacz|felgi|opony|
+        dywaniki\s*samochodowe|dywaniki\s*gumowe|pompa\s*wspomagania|
+        ubezpieczeni|wydawnictwo
     )\b
 """, re.I | re.VERBOSE)
 
@@ -307,6 +316,7 @@ BUNDLE_RE = re.compile(r"""
         \d+\s*spel\b|\d+\s*spiele?\b|
         \d+\s*jeux?\b|\d+\s*juegos?\b|\d+\s*giochi?\b|
         \d+\s*igr[aei]\b|\d+\s*joc[uri]*\b|\d+\s*játék\b|
+        \d+\s*jocuri\b|
         paketti\b|pakket\b|pack(?!\s*art)
     )\b
 """, re.I | re.VERBOSE)
@@ -329,13 +339,20 @@ CONSOLE_MAIN_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# FIX 2: tytuł ZACZYNA SIĘ od producenta/platformy → to konsola, nie gra
+# Tytuł ZACZYNA SIĘ od producenta/platformy → konsola
 STARTS_WITH_PLATFORM_RE = re.compile(
     r'^(sony|nintendo|sega|atari|'
     r'psp|ps\s*vita|playstation(\s*(portable|vita))?|'
     r'game\s*boy|gameboy|gba\s*sp|gba\b|gbc\b|'
     r'3ds|2ds|dsi|ds\s*lite|'
     r'new\s*3ds|old\s*3ds)',
+    re.I
+)
+
+# Tytuł gry: [słowa] + platforma na końcu, BEZ słów producenta przed platformą
+# Używamy do detekcji gier które przechodzą STARTS_WITH_PLATFORM
+GAME_TITLE_WITH_PLATFORM_RE = re.compile(
+    r'^.{5,}\s+(gameboy|game\s*boy|gba|gbc|nintendo\s*ds|psp|3ds|2ds)\s*$',
     re.I
 )
 
@@ -384,13 +401,18 @@ def classify_tcg(t_f):
     return None
 
 def is_interesting_item(title, price):
-    t_f = title.lower()
+    t_f = title.lower().strip()
 
     if JUNK_RE.search(t_f): return False, "JUNK_EXCLUDE"
     if CLONE_RE.search(t_f): return False, "CLONE"
     if MERCH_RE.search(t_f): return False, "MERCH"
+    if SONY_CAMERA_RE.search(t_f): return False, "JUNK_EXCLUDE"
 
+    # TCG — sprawdź PRZED resztą filtrów (ma własną logikę)
     if "pokemon" in t_f or "pokémon" in t_f:
+        # MERCH dla TCG: akryl/stojaki sprawdzamy tu bo MERCH_RE nie łapie akrylu
+        if PARTS_RE.search(t_f) and not any(x in t_f for x in ["konsola", "console"]):
+            return False, "PART"
         tcg = classify_tcg(t_f)
         if tcg:
             subcat, max_price = tcg
@@ -417,11 +439,34 @@ def is_interesting_item(title, price):
     if SCREEN_RE.search(t_f): return False, "PART"
 
     has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
-    has_bundle_signal = bool(BUNDLE_RE.search(t_f))
 
-    # FIX 2: tytuł zaczyna się od platformy/producenta → traktuj jako konsolę
-    if STARTS_WITH_PLATFORM_RE.match(t_f.strip()):
-        has_konsola_in_title = True
+    # Tytuł zaczyna się od platformy/producenta → konsola
+    if STARTS_WITH_PLATFORM_RE.match(t_f):
+        # Ale jeśli to tytuł gry w stylu "Nintendo DS Crash" / "Nintendo DS Dora" —
+        # czyli platforma + krótki tytuł bez modelu konsoli → gra
+        # Konsole mają: model (xl, lite, sp, 1004...), kolor, stan, CFW
+        # Gry mają: tytuł własny po platformie
+        # Heurystyka: jeśli po platformie jest znany model/opis → konsola
+        if not CONSOLE_MAIN_RE.search(t_f):
+            # Starts with platform ale nie ma modelu konsoli → prawdopodobnie gra
+            # Np. "Nintendo DS Crash", "Nintendo DS Dora"
+            # Wyjątek: samo "Nintendo DS" lub "PSP" bez niczego → konsola
+            after_platform = STARTS_WITH_PLATFORM_RE.sub('', t_f).strip()
+            if len(after_platform) > 3 and not re.match(
+                r'^(xl|ll|lite|sp|fat|slim|go|street|color|colour|pocket|light|classic|'
+                r'advance|advance\s*sp|original|\d{4}|black|white|red|blue|pink|'
+                r'purple|yellow|green|silver|gold|coral|turquoise|'
+                r'cfw|ips|oled|komplet|stan|bdb|idealn|sprawna|z\s*grami|'
+                r'przenośna|przenośn|gaming|konsola|console)',
+                after_platform, re.I
+            ):
+                has_konsola_in_title = False  # to gra, nie konsola
+            else:
+                has_konsola_in_title = True
+        else:
+            has_konsola_in_title = True
+
+    has_bundle_signal = bool(BUNDLE_RE.search(t_f))
 
     if not has_konsola_in_title and not has_bundle_signal:
         if PARTS_RE.search(t_f): return False, "PART"
@@ -503,7 +548,7 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v72.1 | pudełko fix + starts_with_platform + portabil")
+    log_debug("🚀 SNIPER v73.0 | game/console heuristic + karta pamięci + Sony DSC + JUNK rozszerzony")
     vinted_init()
 
     Q_V = [
