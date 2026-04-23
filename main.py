@@ -514,35 +514,40 @@ def is_interesting_item(title, price):
 # PROCESS ITEM
 # ---------------------------------------------------------------------------
 def process_item(title, url, price, src, item_id=None, suppress=False):
-    if item_id and item_id in SENT_IDS: return False
+    if item_id and item_id in SENT_IDS:
+        return False
 
     clean_url = url.split("?")[0].rstrip("/")
-    content_hash = hashlib.md5(f"{title[:40].lower().strip()}_{int(price)}".encode()).hexdigest()
+    content_hash = hashlib.md5(
+        f"{title[:40].lower().strip()}_{int(price)}".encode()
+    ).hexdigest()
 
-    if is_duplicate(clean_url, content_hash): return False
+    if is_duplicate(clean_url, content_hash):
+        return False
 
     valid, res = is_interesting_item(title, price)
-if valid:
-    if not suppress:
-        msg = (
-            f"🔥 *OKAZJA {src}* [{res}]\n"
-            f"📦 {escape_md(title[:70])}\n"
-            f"💰 `{price:.2f} zł`\n"
-            f"🔗 [LINK]({clean_url})"
-        )
-        send_telegram(msg)
-        log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
 
-    if item_id:
-        SENT_IDS.add(item_id)
+    if valid:
+        if not suppress:
+            msg = (
+                f"🔥 *OKAZJA {src}* [{res}]\n"
+                f"📦 {escape_md(title[:70])}\n"
+                f"💰 `{price:.2f} zł`\n"
+                f"🔗 {clean_url}"
+            )
+            send_telegram(msg)
+            log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
+
+        if item_id:
+            SENT_IDS.add(item_id)
 
         save_to_memory(clean_url, content_hash)
-    return True
+        return True
 
-else:
-    if res != "JUNK_EXCLUDE" and not suppress:
-        log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
-    return False
+    else:
+        if res != "JUNK_EXCLUDE" and not suppress:
+            log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
+        return False
 # ---------------------------------------------------------------------------
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
