@@ -592,7 +592,7 @@ if __name__ == "__main__":
         "sony walkman", "sony discman",
     ]
 
-  while True:
+        while True:
     if 1 <= time.localtime().tm_hour < 6:
         time.sleep(1800)
         continue
