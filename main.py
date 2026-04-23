@@ -522,28 +522,27 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
     if is_duplicate(clean_url, content_hash): return False
 
     valid, res = is_interesting_item(title, price)
-    if valid:
-        if not suppress:
-            msg = f"🔥 *OKAZJA {src}* [{res}]\n📦 {escape_md(title[:70])}\n💰 `{price:.2f} zł`"
-            if src == "OLX":
-                olx_id = extract_olx_id(clean_url)
-                keyboard = {"inline_keyboard": [[
-                    {"text": "📱 Otwórz w aplikacji OLX", "url": f"olx://listing/{olx_id}" if olx_id else clean_url},
-                    {"text": "🌐 Przeglądarka", "url": clean_url},
-                ]]}
-                send_telegram(msg, reply_markup=keyboard)
-            else:
-                msg += f"\n🔗 [LINK]({clean_url})"
-                send_telegram(msg)
-            log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
-        if item_id: SENT_IDS.add(item_id)
-        save_to_memory(clean_url, content_hash)
-        return True
-    else:
-        if res != "JUNK_EXCLUDE" and not suppress:
-            log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
-    return False
+if valid:
+    if not suppress:
+        msg = (
+            f"🔥 *OKAZJA {src}* [{res}]\n"
+            f"📦 {escape_md(title[:70])}\n"
+            f"💰 `{price:.2f} zł`\n"
+            f"🔗 [LINK]({clean_url})"
+        )
+        send_telegram(msg)
+        log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
 
+    if item_id:
+        SENT_IDS.add(item_id)
+
+    save_to_memory(clean_url, content_hash)
+    return True
+
+else:
+    if res != "JUNK_EXCLUDE" and not suppress:
+        log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
+    return False
 # ---------------------------------------------------------------------------
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
