@@ -536,7 +536,7 @@ if valid:
     if item_id:
         SENT_IDS.add(item_id)
 
-    save_to_memory(clean_url, content_hash)
+        save_to_memory(clean_url, content_hash)
     return True
 
 else:
