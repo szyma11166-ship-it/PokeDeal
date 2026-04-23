@@ -592,7 +592,7 @@ if __name__ == "__main__":
         "sony walkman", "sony discman",
     ]
 
-        while True:
+while True:
     if 1 <= time.localtime().tm_hour < 6:
         time.sleep(1800)
         continue
@@ -614,7 +614,7 @@ if __name__ == "__main__":
             ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
             if ok:
                 vinted_ok = True
-            time.sleep(random.uniform(7, 11))
+            time.sleep(random.uniform(8, 14))
 
         LAST_VINTED_SCAN = now
 
