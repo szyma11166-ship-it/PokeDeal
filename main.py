@@ -592,53 +592,63 @@ if __name__ == "__main__":
         "sony walkman", "sony discman",
     ]
 
-    while True:
-        if 1 <= time.localtime().tm_hour < 6:
-            time.sleep(1800)
-            continue
+  while True:
+    if 1 <= time.localtime().tm_hour < 6:
+        time.sleep(1800)
+        continue
 
-        v_list = Q_V.copy()
-        pl_list = Q_PL.copy()
-        random.shuffle(v_list)
-        random.shuffle(pl_list)
+    v_list = Q_V.copy()
+    pl_list = Q_PL.copy()
+    random.shuffle(v_list)
+    random.shuffle(pl_list)
 
-        now = time.time()
-if now - LAST_VINTED_SCAN >= VINTED_SCAN_INTERVAL:
-    log_debug("🔎 Start skanu Vinted (15 min interval)")
-    vinted_ok = False
+    # =========================
+    # VINTED — CO 15 MIN
+    # =========================
+    now = time.time()
+    if now - LAST_VINTED_SCAN >= VINTED_SCAN_INTERVAL:
+        log_debug("🔎 Start skanu Vinted (15 min interval)")
+        vinted_ok = False
 
-    for q_v in v_list:
-        ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
-        if ok:
-            vinted_ok = True
-        time.sleep(random.uniform(8, 14))  # wolniej = mniej 403
+        for q_v in v_list:
+            ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
+            if ok:
+                vinted_ok = True
+            time.sleep(random.uniform(7, 11))
 
-    LAST_VINTED_SCAN = now
+        LAST_VINTED_SCAN = now
 
-    if vinted_ok and FIRST_RUN_VINTED:
-        FIRST_RUN_VINTED = False
-        log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
-else:
-    remaining = int((VINTED_SCAN_INTERVAL - (now - LAST_VINTED_SCAN)) // 60)
-    log_debug(f"⏳ Vinted — kolejny skan za ~{remaining} min")
+        if vinted_ok and FIRST_RUN_VINTED:
+            FIRST_RUN_VINTED = False
+            log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
+    else:
+        remaining = int((VINTED_SCAN_INTERVAL - (now - LAST_VINTED_SCAN)) // 60)
+        log_debug(f"⏳ Vinted — kolejny skan za ~{remaining} min")
 
+    # =========================
+    # OLX + ALLEGRO — CO PĘTLĘ
+    # =========================
+    olx_ok = False
+    allegro_ok = False
 
-        olx_ok = False
-        allegro_ok = False
-        for q_pl in pl_list:
-            ok_olx = scrape_olx(q_pl, first_run=FIRST_RUN_OLX)
-            if ok_olx: olx_ok = True
-            time.sleep(random.uniform(2, 4))
-            ok_al = scrape_allegro_lokalnie(q_pl, first_run=FIRST_RUN_ALLEGRO)
-            if ok_al: allegro_ok = True
-            time.sleep(random.uniform(3, 5))
+    for q_pl in pl_list:
+        ok_olx = scrape_olx(q_pl, first_run=FIRST_RUN_OLX)
+        if ok_olx:
+            olx_ok = True
+        time.sleep(random.uniform(2, 4))
 
-        if olx_ok and FIRST_RUN_OLX:
-            FIRST_RUN_OLX = False
-            log_debug("✅ OLX — pierwszy skan zakończony, powiadomienia aktywne")
-        if allegro_ok and FIRST_RUN_ALLEGRO:
-            FIRST_RUN_ALLEGRO = False
-            log_debug("✅ Allegro — pierwszy skan zakończony, powiadomienia aktywne")
+        ok_al = scrape_allegro_lokalnie(q_pl, first_run=FIRST_RUN_ALLEGRO)
+        if ok_al:
+            allegro_ok = True
+        time.sleep(random.uniform(3, 5))
 
-        log_debug("💤 Przerwa 5 min.")
-        time.sleep(300)
+    if olx_ok and FIRST_RUN_OLX:
+        FIRST_RUN_OLX = False
+        log_debug("✅ OLX — pierwszy skan zakończony, powiadomienia aktywne")
+
+    if allegro_ok and FIRST_RUN_ALLEGRO:
+        FIRST_RUN_ALLEGRO = False
+        log_debug("✅ Allegro — pierwszy skan zakończony, powiadomienia aktywne")
+
+    log_debug("💤 Przerwa 5 min.")
+    time.sleep(300)
