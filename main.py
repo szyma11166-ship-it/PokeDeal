@@ -41,6 +41,8 @@ FIRST_RUN_OLX     = True
 FIRST_RUN_ALLEGRO = True
 VINTED_LAST_INIT  = 0
 VINTED_INIT_INTERVAL = 2 * 3600
+VINTED_SCAN_INTERVAL = 15 * 60  # 15 minut
+LAST_VINTED_SCAN = 0
 VINTED_FAIL_COUNT = 0
 VINTED_BLOCKED_UNTIL = 0
 
@@ -600,14 +602,26 @@ if __name__ == "__main__":
         random.shuffle(v_list)
         random.shuffle(pl_list)
 
-        vinted_ok = False
-        for q_v in v_list:
-            ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
-            if ok: vinted_ok = True
-            time.sleep(random.uniform(4, 8))
-        if vinted_ok and FIRST_RUN_VINTED:
-            FIRST_RUN_VINTED = False
-            log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
+        now = time.time()
+if now - LAST_VINTED_SCAN >= VINTED_SCAN_INTERVAL:
+    log_debug("🔎 Start skanu Vinted (15 min interval)")
+    vinted_ok = False
+
+    for q_v in v_list:
+        ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
+        if ok:
+            vinted_ok = True
+        time.sleep(random.uniform(8, 14))  # wolniej = mniej 403
+
+    LAST_VINTED_SCAN = now
+
+    if vinted_ok and FIRST_RUN_VINTED:
+        FIRST_RUN_VINTED = False
+        log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
+else:
+    remaining = int((VINTED_SCAN_INTERVAL - (now - LAST_VINTED_SCAN)) // 60)
+    log_debug(f"⏳ Vinted — kolejny skan za ~{remaining} min")
+
 
         olx_ok = False
         allegro_ok = False
