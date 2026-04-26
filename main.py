@@ -578,6 +578,7 @@ if __name__ == "__main__":
         "pokemon booster box", "pokemon booster bundle",
         "pokemon tin", "pokemon mini tin", "pokemon blister",
         "sony walkman", "sony discman", "sony minidisc",
+        "ipod nano",
     ]
     Q_PL = [
         "psp fat", "psp slim", "psp go", "psp street",
