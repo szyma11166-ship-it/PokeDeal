@@ -491,13 +491,6 @@ def is_interesting_item(title, price):
         elif not has_konsola_in_title:
             if not has_bundle_signal: return False, "SINGLE_GAME"
 
-    if not hw_cat:
-        if any(x in t_f for x in ["walkman", "discman", "minidisc", "mini disc", "md player", "cd walkman"]):
-            if DICTAPHONE_RE.search(t_f): return False, "DICTAPHONE"
-            if PHONE_WALKMAN_RE.search(t_f): return False, "PHONE"
-            if not any(x in t_f for x in ["sony", "aiwa"]): return False, "NOT_SONY"
-            hw_cat = "WALKMAN"
-
     if not hw_cat: return False, "NO_CAT"
 
     limits = {
@@ -506,7 +499,6 @@ def is_interesting_item(title, price):
         "3DS":     (100, 500),
         "DS":      (50, 170),
         "RETRO":   (50, 250),
-        "WALKMAN": (35, 100),
     }
     lo, hi = limits.get(hw_cat, (50, 1000))
     if lo <= price <= hi: return True, hw_cat
@@ -577,7 +569,6 @@ if __name__ == "__main__":
         "pokemon etb", "pokemon elite trainer box",
         "pokemon booster box", "pokemon booster bundle",
         "pokemon tin", "pokemon mini tin", "pokemon blister",
-        "sony walkman", "sony discman", "sony minidisc",
         "ipod nano",
     ]
     Q_PL = [
@@ -590,7 +581,6 @@ if __name__ == "__main__":
         "gameboy advance sp", "gameboy advance", "gameboy color",
         "game boy pocket", "game boy classic", "gameboy pocket",
         "pokemon etb", "pokemon booster box",
-        "sony walkman", "sony discman",
     ]
 
 while True:
