@@ -583,6 +583,7 @@ def is_interesting_item(title, price):
     elif any(x in t_f for x in ["psp", "playstation portable"]): hw_cat = "PSP"
     elif any(x in t_f for x in ["3ds", "2ds"]): hw_cat = "3DS"
     elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
+    elif any(x in t_f for x in ["apple pencil"]): hw_cat = "PEN"
     elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
 
     if hw_cat:
@@ -599,6 +600,7 @@ def is_interesting_item(title, price):
         "3DS":     (100, 500),
         "DS":      (50, 170),
         "RETRO":   (50, 250),
+        "PEN":     (50, 100),
     }
     lo, hi = limits.get(hw_cat, (50, 1000))
     if lo <= price <= hi: return True, hw_cat
