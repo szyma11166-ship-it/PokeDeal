@@ -172,7 +172,13 @@ def scrape_vinted(query, first_run=False):
             else:
                 return False
         if r.status_code == 200:
-            items = r.json().get("items", [])
+            try:
+                data = r.json()
+            except Exception:
+                log_debug(f"⚠️ Vinted [{query}]: Błąd parsowania JSON")
+                return False
+                
+            items = data.get("items", [])
             new_count = 0
             for item in items:
                 item_id = str(item.get("id", ""))
@@ -232,9 +238,11 @@ def scrape_allegro_lokalnie(query, first_run=False):
                 if not item_url.startswith("http"): item_url = f"https://allegrolokalnie.pl{item_url}"
                 title_el = item.find(["h2", "h3", "span"], class_=re.compile(r"title|name|heading", re.I))
                 title = title_el.get_text(strip=True) if title_el else item.get_text(separator=" ")[:60]
-                price_match = re.search(r"(\d[\d\s]*(?:[,\.]\d{1,2})?)\s*zł", item.get_text(separator=" "))
-                if price_match and process_item(title.strip(), item_url, float(price_match.group(1).replace(" ", "").replace(",", ".")), "ALLEGRO", suppress=first_run):
-                    new_count += 1
+                price_match = re.search(r"(\d[\d\s\xa0]*(?:[,\.]\d{1,2})?)\s*zł", item.get_text(separator=" "))
+                if price_match:
+                    clean_price = re.sub(r'\s+', '', price_match.group(1)).replace(",", ".")
+                    if process_item(title.strip(), item_url, float(clean_price), "ALLEGRO", suppress=first_run):
+                        new_count += 1
             except: continue
         if not first_run:
             log_debug(f"✅ Allegro [{query}]: nowych {new_count}")
@@ -351,8 +359,6 @@ STARTS_WITH_PLATFORM_RE = re.compile(
     re.I
 )
 
-# Tytuł gry: [słowa] + platforma na końcu, BEZ słów producenta przed platformą
-# Używamy do detekcji gier które przechodzą STARTS_WITH_PLATFORM
 GAME_TITLE_WITH_PLATFORM_RE = re.compile(
     r'^.{5,}\s+(gameboy|game\s*boy|gba|gbc|nintendo\s*ds|psp|3ds|2ds)\s*$',
     re.I
@@ -380,7 +386,7 @@ TCG_EMPTY_RE = re.compile(r"""
 """, re.I | re.VERBOSE)
 
 def classify_tcg(t_f):
-    if "pokemon" not in t_f and "pokémon" not in t_f: return None
+    if not any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]): return None
     if JAPANESE_RE.search(t_f): return None
     if TCG_EMPTY_RE.search(t_f): return None
     if any(x in t_f for x in ["chiński", "chińskie", "chinese", "chin "]): return None
@@ -391,7 +397,7 @@ def classify_tcg(t_f):
     ]
     if not any(k in t_f for k in sealed_keywords): return None
     if "etb" in t_f or "elite trainer" in t_f: return ("TCG_ETB", 280)
-    if "booster box" in t_f or ("display" in t_f and "pokemon" in t_f): return ("TCG_BOX", 600)
+    if "booster box" in t_f or ("display" in t_f and ("pokemon" in t_f or "pokémon" in t_f or "ポケモン" in t_f)): return ("TCG_BOX", 600)
     if "first partner" in t_f: return ("TCG_FIRST_PARTNER", 150)
     if "bundle" in t_f: return ("TCG_BUNDLE", 150)
     if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]): return ("TCG_MINI_TIN", 50)
@@ -406,65 +412,44 @@ def classify_tcg(t_f):
 # GRADED POKEMON CARDS — PSA / BGS / CGC / ACE / SGC
 # ---------------------------------------------------------------------------
 
-# Regex na nazwę gradinghouse'u + ocenę
 GRADER_RE = re.compile(
     r'\b(psa|bgs|bgs\s*subgrades?|cgc|ace\s*grading|ace|sgc|pgx)\b',
     re.I
 )
 
-# Ocena 9 lub 10 (w różnych formatach: "9", "10", "9.5", "gem mint", "pristine")
 GRADE_VALUE_RE = re.compile(
     r'\b(10|gem\s*mint|pristine|psa\s*10|psa\s*9|bgs\s*10|bgs\s*9|cgc\s*10|cgc\s*9'
     r'|grade[d]?\s*(10|9\.5|9)|9\.5|(?<!\d)9(?!\d)|graded\s*10|graded\s*9)\b',
     re.I
 )
 
-# Blokada: karty z oceną 8 lub niżej (żeby nie łapać "psa 8", "psa 7" itp.)
 GRADE_LOW_RE = re.compile(
     r'\b(psa|bgs|cgc|sgc|ace|pgx)\s*[1-8](?!\d)\b'
     r'|grade[d]?\s*[1-8](?!\d)\b',
     re.I
 )
 
-# Blokada: chińskie, fałszywe, fake
 GRADED_FAKE_RE = re.compile(
     r'\b(fake|fałszyw|replica|reprint|proxy|custom|chiński|chińska|chinese|bootleg)\b',
     re.I
 )
 
 def classify_graded_card(t_f):
-    """
-    Zwraca ("GRADED_PSA10" | "GRADED_PSA9" | "GRADED_BGS" | "GRADED_CGC" | "GRADED_OTHER", max_price)
-    lub None jeśli nie pasuje.
-
-    Akceptuje karty Pokémon ocenione przez PSA/BGS/CGC/ACE/SGC w ocenie 9 lub 10.
-    Odrzuca:
-      - karty z niską oceną (1-8)
-      - fake/replica
-      - japońskie (kolekcjoner może chcieć, ale osobna decyzja — tu blokujemy)
-      - brak słowa "pokemon"/"pokémon" w tytule
-    """
-    # Musi być Pokémon
-    if "pokemon" not in t_f and "pokémon" not in t_f:
+    if not any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]):
         return None
 
-    # Musi mieć grader
     if not GRADER_RE.search(t_f):
         return None
 
-    # Blokada niskich ocen
     if GRADE_LOW_RE.search(t_f):
         return None
 
-    # Blokada fake/chiński
     if GRADED_FAKE_RE.search(t_f):
         return None
 
-    # Musi mieć ocenę 9 lub 10
     if not GRADE_VALUE_RE.search(t_f):
         return None
 
-    # Rozróżnienie grader + ocena dla podkategorii
     is_psa  = bool(re.search(r'\bpsa\b', t_f, re.I))
     is_bgs  = bool(re.search(r'\bbgs\b', t_f, re.I))
     is_cgc  = bool(re.search(r'\bcgc\b', t_f, re.I))
@@ -509,13 +494,10 @@ def is_interesting_item(title, price):
     if MERCH_RE.search(t_f): return False, "MERCH"
     if SONY_CAMERA_RE.search(t_f): return False, "JUNK_EXCLUDE"
 
-    # TCG — sprawdź PRZED resztą filtrów (ma własną logikę)
-    if "pokemon" in t_f or "pokémon" in t_f:
-        # MERCH dla TCG: akryl/stojaki sprawdzamy tu bo MERCH_RE nie łapie akrylu
+    if any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]):
         if PARTS_RE.search(t_f) and not any(x in t_f for x in ["konsola", "console"]):
             return False, "PART"
 
-        # --- GRADED CARDS (PSA/BGS/CGC/ACE/SGC) ---
         graded = classify_graded_card(t_f)
         if graded:
             subcat, max_price = graded
@@ -550,7 +532,6 @@ def is_interesting_item(title, price):
 
     has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
 
-    # Tytuł zaczyna się od platformy/producenta → konsola
     if STARTS_WITH_PLATFORM_RE.match(t_f):
         if not CONSOLE_MAIN_RE.search(t_f):
             after_platform = STARTS_WITH_PLATFORM_RE.sub('', t_f).strip()
@@ -562,7 +543,7 @@ def is_interesting_item(title, price):
                 r'przenośna|przenośn|gaming|konsola|console)',
                 after_platform, re.I
             ):
-                has_konsola_in_title = False  # to gra, nie konsola
+                has_konsola_in_title = False
             else:
                 has_konsola_in_title = True
         else:
@@ -705,63 +686,63 @@ if __name__ == "__main__":
         "pokemon japanese psa", "pokemon jp graded",
     ]
 
-while True:
-    if 1 <= time.localtime().tm_hour < 6:
-        time.sleep(1800)
-        continue
+    while True:
+        if 1 <= time.localtime().tm_hour < 6:
+            time.sleep(1800)
+            continue
 
-    v_list = Q_V.copy()
-    pl_list = Q_PL.copy()
-    random.shuffle(v_list)
-    random.shuffle(pl_list)
+        v_list = Q_V.copy()
+        pl_list = Q_PL.copy()
+        random.shuffle(v_list)
+        random.shuffle(pl_list)
 
-    # =========================
-    # VINTED — CO 15 MIN
-    # =========================
-    now = time.time()
-    if now - LAST_VINTED_SCAN >= VINTED_SCAN_INTERVAL:
-        log_debug("🔎 Start skanu Vinted (15 min interval)")
-        vinted_ok = False
+        # =========================
+        # VINTED — CO 15 MIN
+        # =========================
+        now = time.time()
+        if now - LAST_VINTED_SCAN >= VINTED_SCAN_INTERVAL:
+            log_debug("🔎 Start skanu Vinted (15 min interval)")
+            vinted_ok = False
 
-        for q_v in v_list:
-            ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
-            if ok:
-                vinted_ok = True
-            time.sleep(random.uniform(8, 14))
+            for q_v in v_list:
+                ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
+                if ok:
+                    vinted_ok = True
+                time.sleep(random.uniform(8, 14))
 
-        LAST_VINTED_SCAN = now
+            LAST_VINTED_SCAN = now
 
-        if vinted_ok and FIRST_RUN_VINTED:
-            FIRST_RUN_VINTED = False
-            log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
-    else:
-        remaining = int((VINTED_SCAN_INTERVAL - (now - LAST_VINTED_SCAN)) // 60)
-        log_debug(f"⏳ Vinted — kolejny skan za ~{remaining} min")
+            if vinted_ok and FIRST_RUN_VINTED:
+                FIRST_RUN_VINTED = False
+                log_debug("✅ Vinted — pierwszy skan zakończony, powiadomienia aktywne")
+        else:
+            remaining = int((VINTED_SCAN_INTERVAL - (now - LAST_VINTED_SCAN)) // 60)
+            log_debug(f"⏳ Vinted — kolejny skan za ~{remaining} min")
 
-    # =========================
-    # OLX + ALLEGRO — CO PĘTLĘ
-    # =========================
-    olx_ok = False
-    allegro_ok = False
+        # =========================
+        # OLX + ALLEGRO — CO PĘTLĘ
+        # =========================
+        olx_ok = False
+        allegro_ok = False
 
-    for q_pl in pl_list:
-        ok_olx = scrape_olx(q_pl, first_run=FIRST_RUN_OLX)
-        if ok_olx:
-            olx_ok = True
-        time.sleep(random.uniform(2, 4))
+        for q_pl in pl_list:
+            ok_olx = scrape_olx(q_pl, first_run=FIRST_RUN_OLX)
+            if ok_olx:
+                olx_ok = True
+            time.sleep(random.uniform(2, 4))
 
-        ok_al = scrape_allegro_lokalnie(q_pl, first_run=FIRST_RUN_ALLEGRO)
-        if ok_al:
-            allegro_ok = True
-        time.sleep(random.uniform(3, 5))
+            ok_al = scrape_allegro_lokalnie(q_pl, first_run=FIRST_RUN_ALLEGRO)
+            if ok_al:
+                allegro_ok = True
+            time.sleep(random.uniform(3, 5))
 
-    if olx_ok and FIRST_RUN_OLX:
-        FIRST_RUN_OLX = False
-        log_debug("✅ OLX — pierwszy skan zakończony, powiadomienia aktywne")
+        if olx_ok and FIRST_RUN_OLX:
+            FIRST_RUN_OLX = False
+            log_debug("✅ OLX — pierwszy skan zakończony, powiadomienia aktywne")
 
-    if allegro_ok and FIRST_RUN_ALLEGRO:
-        FIRST_RUN_ALLEGRO = False
-        log_debug("✅ Allegro — pierwszy skan zakończony, powiadomienia aktywne")
+        if allegro_ok and FIRST_RUN_ALLEGRO:
+            FIRST_RUN_ALLEGRO = False
+            log_debug("✅ Allegro — pierwszy skan zakończony, powiadomienia aktywne")
 
-    log_debug("💤 Przerwa 5 min.")
-    time.sleep(300)
+        log_debug("💤 Przerwa 5 min.")
+        time.sleep(300)
