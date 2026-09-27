@@ -217,7 +217,7 @@ def scrape_vinted(query, first_run=False):
 
                     price_el = card.find(string=re.compile(r"\d+[\s,.]*\d*\s*zł", re.I))
                     if price_el:
-                        p_match = re.search(r"(\d+(?:[\s,.]\d+)?)\s*zł", price_el)
+                        p_match = re.search(r"(\d+(?:[\s,.]\d+)?)\s*zł", str(price_el))
                         if p_match:
                             clean_p = p_match.group(1).replace(" ", "").replace(",", ".")
                             items.append({
@@ -261,10 +261,11 @@ def scrape_olx(query, first_run=False):
         if r.status_code == 200:
             new_count = 0
             for o in r.json().get('data', []):
-                p_val = next((x['value']['value'] for x in o['params'] if x['key'] == 'price'), None)
+                p_val = next((x['value']['value'] for x in o.get('params', []) if x.get('key') == 'price'), None)
                 if not p_val: continue
                 olx_id = f"olx_{o.get('id', '')}"
-                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id, suppress=first_run): new_count += 1
+                if process_item(o['title'], o['url'], float(p_val), "OLX", item_id=olx_id, suppress=first_run): 
+                    new_count += 1
             if not first_run:
                 log_debug(f"✅ OLX [{query}]: nowych {new_count}")
             return True
@@ -298,7 +299,8 @@ def scrape_allegro_lokalnie(query, first_run=False):
                     clean_price = re.sub(r'\s+', '', price_match.group(1)).replace(",", ".")
                     if process_item(title.strip(), item_url, float(clean_price), "ALLEGRO", suppress=first_run):
                         new_count += 1
-            except: continue
+            except Exception:
+                continue
         if not first_run:
             log_debug(f"✅ Allegro [{query}]: nowych {new_count}")
         return True
@@ -383,7 +385,6 @@ BUNDLE_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# DZIEDZICZENIE PATERNÓW DLA SPRZĘTU (HW)
 HW_PATTERNS = {
     "VITA": re.compile(r"\b(ps\s*vita|psvita|playstation\s*vita|vita|pch[-\s]?\d{4}|pch\d{4})\b", re.I),
     "PSP": re.compile(r"\b(psp|playstation\s*portable|psp[-\s]?\d{4}|psp[-\s]?e\d{4})\b", re.I),
@@ -605,8 +606,10 @@ def is_interesting_item(title, price):
 # ---------------------------------------------------------------------------
 
 def process_item(title, url, price, src, item_id=None, suppress=False):
-    if item_id and item_id in SENT_IDS:
-        return False
+    if item_id:
+        if item_id in SENT_IDS:
+            return False
+        SENT_IDS.add(item_id)
 
     clean_url = url.split("?")[0].rstrip("/")
     content_hash = hashlib.md5(
@@ -619,6 +622,7 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
     valid, res = is_interesting_item(title, price)
 
     if valid:
+        save_to_memory(clean_url, content_hash)
         if not suppress:
             msg = (
                 f"🔥 *OKAZJA {src}* [{res}]\n"
@@ -628,19 +632,13 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
             )
             send_telegram(msg)
             log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
-
-        if item_id:
-            SENT_IDS.add(item_id)
-
-        save_to_memory(clean_url, content_hash)
         return True
 
     else:
-        # Wyciszamy zbędne komunikaty NO_CAT dla spamu wyszukiwania, żeby nie zaśmiecać konsoli
+        save_to_memory(clean_url, content_hash)
         if res not in ["JUNK_EXCLUDE", "PKMN_JUNK", "NO_CAT"] and not suppress:
             log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
         elif res == "NO_CAT" and not suppress:
-            # Wypisz powiadomienie tylko jeśli przedmiot przypomina konsolę, a została pominięta
             if any(w in title.lower() for w in ["nintendo", "sony", "playstation", "console", "konsola", "game"]):
                 log_debug(f"❓ [NIE_ROZPOZNANO] {title[:50]} ({price} zł)")
         return False
