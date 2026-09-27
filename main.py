@@ -130,9 +130,16 @@ def vinted_init():
         chosen = random.choice(["chrome120", "chrome116", "safari15_5", "edge101"])
         VINTED_SESSION.impersonate = chosen
         VINTED_SESSION.cookies.clear()
-        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
-        if r.status_code == 200:
-            log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
+        
+        # 1. Wejście na stronę główną
+        r1 = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        time.sleep(random.uniform(1.5, 3.0))
+        
+        # 2. Wejście na katalog w celu wymuszenia generowania ciastek sesji API
+        r2 = VINTED_SESSION.get("https://www.vinted.pl/catalog", timeout=20)
+        
+        if r2.status_code == 200 and len(VINTED_SESSION.cookies) > 0:
+            log_debug(f"✅ Sesja Vinted gotowa ({chosen}), pobrano ciastka: {len(VINTED_SESSION.cookies)}")
             VINTED_LAST_INIT = time.time()
             VINTED_FAIL_COUNT = 0
             VINTED_BLOCKED_UNTIL = 0
@@ -141,7 +148,7 @@ def vinted_init():
             VINTED_FAIL_COUNT += 1
             wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
             VINTED_BLOCKED_UNTIL = time.time() + wait
-            log_debug(f"💥 Vinted init: {r.status_code} — czekam {wait//60} min (próba {VINTED_FAIL_COUNT})")
+            log_debug(f"💥 Vinted init: brak ciastek lub status {r2.status_code} — czekam {wait//60} min")
             return False
     except Exception as e:
         VINTED_FAIL_COUNT += 1
@@ -746,3 +753,4 @@ if __name__ == "__main__":
 
         log_debug("💤 Przerwa 5 min.")
         time.sleep(300)
+a
