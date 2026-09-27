@@ -126,34 +126,22 @@ def save_to_memory(clean_url, content_hash):
 def vinted_init():
     global VINTED_LAST_INIT, VINTED_FAIL_COUNT, VINTED_BLOCKED_UNTIL
     try:
-        log_debug("🔄 Inicjalizuję sesję Vinted...")
+        log_debug("🔄 Inicjalizuję sesję Vinted (HTML mode)...")
         chosen = random.choice(["chrome120", "chrome116", "safari15_5", "edge101"])
         VINTED_SESSION.impersonate = chosen
         VINTED_SESSION.cookies.clear()
         
-        # Domyślne nagłówki przeglądarkowe
         VINTED_SESSION.headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
-            "Origin": "https://www.vinted.pl",
+            "Referer": "https://www.vinted.pl/",
         })
 
-        # 1. Pobranie strony głównej i katalogu w celu osadzenia sesji
-        VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
-        time.sleep(random.uniform(1.0, 2.5))
-        r2 = VINTED_SESSION.get("https://www.vinted.pl/catalog", timeout=20)
-
-        # 2. Wyciągnięcie tokena Bearer z ciastka sesyjnego
-        token = VINTED_SESSION.cookies.get("access_token_web") or VINTED_SESSION.cookies.get("access_token")
-
-        if token:
-            VINTED_SESSION.headers["Authorization"] = f"Bearer {token}"
-            log_debug("🔑 Dodano token Authorization (Bearer)")
-        else:
-            log_debug("⚠️ Brak tokena Bearer w ciasteczkach!")
-
-        if r2.status_code == 200 and len(VINTED_SESSION.cookies) > 0:
-            log_debug(f"✅ Sesja Vinted gotowa ({chosen}), pobrano ciastka: {len(VINTED_SESSION.cookies)}")
+        r = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        
+        if r.status_code == 200:
+            log_debug(f"✅ Sesja Vinted gotowa ({chosen})")
             VINTED_LAST_INIT = time.time()
             VINTED_FAIL_COUNT = 0
             VINTED_BLOCKED_UNTIL = 0
@@ -162,7 +150,7 @@ def vinted_init():
             VINTED_FAIL_COUNT += 1
             wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
             VINTED_BLOCKED_UNTIL = time.time() + wait
-            log_debug(f"💥 Vinted init błąd: status {r2.status_code}")
+            log_debug(f"💥 Vinted init status: {r.status_code}")
             return False
     except Exception as e:
         VINTED_FAIL_COUNT += 1
@@ -184,50 +172,87 @@ def scrape_vinted(query, first_run=False):
     if not vinted_available(): return False
     try:
         encoded_q = urllib.parse.quote_plus(query)
-        url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={encoded_q}&order=newest_first&per_page=30"
+        # Skanowanie strony katalogu HTML zamiast API
+        url = f"https://www.vinted.pl/catalog?search_text={encoded_q}&order=newest_first"
         
-        # Dedykowane nagłówki dla strzału do API
-        headers = {
-            "Accept": "application/json, text/plain, */*",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"https://www.vinted.pl/catalog?search_text={encoded_q}",
-        }
+        r = VINTED_SESSION.get(url, timeout=20)
 
-        r = VINTED_SESSION.get(url, headers=headers, timeout=20)
-
-        # Jeśli dostajemy 401, 403 lub 404 — resetujemy sesję
-        if r.status_code in [401, 403, 404]:
+        if r.status_code in [401, 403]:
             log_debug(f"🔄 Vinted {r.status_code} [{query}] — reset sesji...")
             time.sleep(random.uniform(5, 10))
             if vinted_init():
-                r = VINTED_SESSION.get(url, headers=headers, timeout=20)
+                r = VINTED_SESSION.get(url, timeout=20)
             else:
                 return False
 
         if r.status_code == 200:
-            try:
-                data = r.json()
-            except Exception:
-                log_debug(f"⚠️ Vinted [{query}]: Błąd parsowania JSON")
-                return False
+            soup = BeautifulSoup(r.text, "html.parser")
+            items = []
 
-            items = data.get("items", [])
+            # Metoda 1: Wyciągnięcie struktury JSON z tagu Next.js
+            script_tag = soup.find("script", id="__NEXT_DATA__")
+            if script_tag and script_tag.string:
+                try:
+                    json_data = json.loads(script_tag.string)
+                    # Nawigacja po drzewie stanu Vinted
+                    page_props = json_data.get("props", {}).get("pageProps", {})
+                    catalog_props = page_props.get("catalogItems", {}) or page_props.get("items", {})
+                    items = catalog_props.get("items", [])
+                except Exception as e:
+                    log_debug(f"⚠️ Błąd parsowania __NEXT_DATA__ [{query}]: {e}")
+
+            # Metoda 2: Fallback na parsowanie HTML, jeśli brak JSON w tagu
+            if not items:
+                item_cards = soup.select("div[data-testid='grid-item'], div.feed-grid__item")
+                for card in item_cards:
+                    a_tag = card.find("a", href=re.compile(r"/items/"))
+                    if not a_tag: continue
+                    
+                    item_url = a_tag.get("href", "")
+                    if not item_url.startswith("http"): item_url = f"https://www.vinted.pl{item_url}"
+                    
+                    # Id z URL (np. /items/123456-tytul)
+                    item_id_match = re.search(r'/items/(\d+)', item_url)
+                    item_id = item_id_match.group(1) if item_id_match else ""
+
+                    title_el = card.find(["p", "h2", "span"], class_=re.compile(r"title|name|description", re.I))
+                    title = title_el.get_text(strip=True) if title_el else a_tag.get("title", "")
+
+                    price_el = card.find(text=re.compile(r"\d+[\s,.]*\d*\s*zł", re.I))
+                    if price_el:
+                        p_match = re.search(r"(\d+(?:[\s,.]\d+)?)\s*zł", price_el)
+                        if p_match:
+                            clean_p = p_match.group(1).replace(" ", "").replace(",", ".")
+                            items.append({
+                                "id": item_id,
+                                "title": title,
+                                "price": float(clean_p),
+                                "url": item_url
+                            })
+
             new_count = 0
             for item in items:
-                item_id = str(item.get("id", ""))
-                if item_id and item_id in SENT_IDS: continue
-                title = item.get("title", "")
-                p_raw = item.get("price", 0)
-                price = float(p_raw.get("amount", 0)) if isinstance(p_raw, dict) else float(p_raw or 0)
-                item_url = item.get("url", "")
-                if not item_url.startswith("http"): item_url = f"https://www.vinted.pl{item_url}"
-                if process_item(title, item_url, price, "VINTED", item_id=item_id, suppress=first_run): new_count += 1
+                if isinstance(item, dict):
+                    item_id = str(item.get("id", ""))
+                    if item_id and item_id in SENT_IDS: continue
+                    
+                    title = item.get("title", "")
+                    p_raw = item.get("price", 0)
+                    price = float(p_raw.get("amount", 0)) if isinstance(p_raw, dict) else float(p_raw or 0)
+                    
+                    item_url = item.get("url", "")
+                    if not item_url.startswith("http"): item_url = f"https://www.vinted.pl{item_url}"
+                    
+                    if process_item(title, item_url, price, "VINTED", item_id=item_id, suppress=first_run): 
+                        new_count += 1
+
             if not first_run:
                 log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
             return True
         else:
             log_debug(f"⚠️ Vinted [{query}]: {r.status_code}")
             return False
+            
     except Exception as e:
         log_debug(f"💥 Błąd Vinted [{query}]: {e}")
         return False
