@@ -131,13 +131,27 @@ def vinted_init():
         VINTED_SESSION.impersonate = chosen
         VINTED_SESSION.cookies.clear()
         
-        # 1. Wejście na stronę główną
-        r1 = VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
-        time.sleep(random.uniform(1.5, 3.0))
-        
-        # 2. Wejście na katalog w celu wymuszenia generowania ciastek sesji API
+        # Domyślne nagłówki przeglądarkowe
+        VINTED_SESSION.headers.update({
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+            "Origin": "https://www.vinted.pl",
+        })
+
+        # 1. Pobranie strony głównej i katalogu w celu osadzenia sesji
+        VINTED_SESSION.get("https://www.vinted.pl/", timeout=20)
+        time.sleep(random.uniform(1.0, 2.5))
         r2 = VINTED_SESSION.get("https://www.vinted.pl/catalog", timeout=20)
-        
+
+        # 2. Wyciągnięcie tokena Bearer z ciastka sesyjnego
+        token = VINTED_SESSION.cookies.get("access_token_web") or VINTED_SESSION.cookies.get("access_token")
+
+        if token:
+            VINTED_SESSION.headers["Authorization"] = f"Bearer {token}"
+            log_debug("🔑 Dodano token Authorization (Bearer)")
+        else:
+            log_debug("⚠️ Brak tokena Bearer w ciasteczkach!")
+
         if r2.status_code == 200 and len(VINTED_SESSION.cookies) > 0:
             log_debug(f"✅ Sesja Vinted gotowa ({chosen}), pobrano ciastka: {len(VINTED_SESSION.cookies)}")
             VINTED_LAST_INIT = time.time()
@@ -148,13 +162,13 @@ def vinted_init():
             VINTED_FAIL_COUNT += 1
             wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
             VINTED_BLOCKED_UNTIL = time.time() + wait
-            log_debug(f"💥 Vinted init: brak ciastek lub status {r2.status_code} — czekam {wait//60} min")
+            log_debug(f"💥 Vinted init błąd: status {r2.status_code}")
             return False
     except Exception as e:
         VINTED_FAIL_COUNT += 1
         wait = min(300 * (2 ** (VINTED_FAIL_COUNT - 1)), 1800)
         VINTED_BLOCKED_UNTIL = time.time() + wait
-        log_debug(f"💥 Błąd init Vinted: {e} — czekam {wait//60} min")
+        log_debug(f"💥 Błąd init Vinted: {e}")
         return False
 
 def vinted_available():
@@ -169,22 +183,34 @@ def vinted_available():
 def scrape_vinted(query, first_run=False):
     if not vinted_available(): return False
     try:
-        url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={urllib.parse.quote_plus(query)}&order=newest_first&per_page=30"
-        r = VINTED_SESSION.get(url, timeout=20)
-        if r.status_code in [401, 403]:
-            log_debug(f"🔄 Vinted {r.status_code} [{query}] — reset...")
-            time.sleep(random.uniform(10, 20))
+        encoded_q = urllib.parse.quote_plus(query)
+        url = f"https://www.vinted.pl/api/v2/catalog/items?search_text={encoded_q}&order=newest_first&per_page=30"
+        
+        # Dedykowane nagłówki dla strzału do API
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"https://www.vinted.pl/catalog?search_text={encoded_q}",
+        }
+
+        r = VINTED_SESSION.get(url, headers=headers, timeout=20)
+
+        # Jeśli dostajemy 401, 403 lub 404 — resetujemy sesję
+        if r.status_code in [401, 403, 404]:
+            log_debug(f"🔄 Vinted {r.status_code} [{query}] — reset sesji...")
+            time.sleep(random.uniform(5, 10))
             if vinted_init():
-                r = VINTED_SESSION.get(url, timeout=20)
+                r = VINTED_SESSION.get(url, headers=headers, timeout=20)
             else:
                 return False
+
         if r.status_code == 200:
             try:
                 data = r.json()
             except Exception:
                 log_debug(f"⚠️ Vinted [{query}]: Błąd parsowania JSON")
                 return False
-                
+
             items = data.get("items", [])
             new_count = 0
             for item in items:
