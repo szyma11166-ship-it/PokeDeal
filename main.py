@@ -1,8 +1,13 @@
-from curl_cffi import requests as curl_requests
-import requests
-from bs4 import BeautifulSoup
-import re, time, random, hashlib, os, json
+import os
+import re
+import time
+import random
+import hashlib
+import json
 import urllib.parse
+from bs4 import BeautifulSoup
+import requests
+from curl_cffi import requests as curl_requests
 
 try:
     import redis as redis_lib
@@ -11,7 +16,8 @@ except ImportError:
     REDIS_AVAILABLE = False
 
 os.environ['TZ'] = 'Europe/Warsaw'
-if hasattr(time, 'tzset'): time.tzset()
+if hasattr(time, 'tzset'):
+    time.tzset()
 
 # --- KONFIGURACJA ---
 BOT_TOKEN = "8641671766:AAEfRWe-lHc_8LLTA-rDecW3NjooDmENOl4"
@@ -172,7 +178,6 @@ def scrape_vinted(query, first_run=False):
     if not vinted_available(): return False
     try:
         encoded_q = urllib.parse.quote_plus(query)
-        # Skanowanie strony katalogu HTML zamiast API
         url = f"https://www.vinted.pl/catalog?search_text={encoded_q}&order=newest_first"
         
         r = VINTED_SESSION.get(url, timeout=20)
@@ -194,7 +199,6 @@ def scrape_vinted(query, first_run=False):
             if script_tag and script_tag.string:
                 try:
                     json_data = json.loads(script_tag.string)
-                    # Nawigacja po drzewie stanu Vinted
                     page_props = json_data.get("props", {}).get("pageProps", {})
                     catalog_props = page_props.get("catalogItems", {}) or page_props.get("items", {})
                     items = catalog_props.get("items", [])
@@ -211,7 +215,6 @@ def scrape_vinted(query, first_run=False):
                     item_url = a_tag.get("href", "")
                     if not item_url.startswith("http"): item_url = f"https://www.vinted.pl{item_url}"
                     
-                    # Id z URL (np. /items/123456-tytul)
                     item_id_match = re.search(r'/items/(\d+)', item_url)
                     item_id = item_id_match.group(1) if item_id_match else ""
 
@@ -310,7 +313,7 @@ def scrape_allegro_lokalnie(query, first_run=False):
         return False
 
 # ---------------------------------------------------------------------------
-# FILTRY
+# FILTRY I REGEXY
 # ---------------------------------------------------------------------------
 
 PARTS_RE = re.compile(r"""
@@ -357,7 +360,6 @@ CLONE_RE = re.compile(r"\b(r36s?|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk
 DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo|dictaphone|diktafon)\b", re.I)
 JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed|nihon|nippon|\bjp\b(?=\s*(ver|ed|version|edition)))\b", re.I)
 
-# Sony aparat cyfrowy DSC — blokada przed Walkman
 SONY_CAMERA_RE = re.compile(r"\bsony\s+dsc[-\s]", re.I)
 
 JUNK_RE = re.compile(r"""
@@ -407,18 +409,12 @@ CONSOLE_MAIN_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-# Tytuł ZACZYNA SIĘ od producenta/platformy → konsola
 STARTS_WITH_PLATFORM_RE = re.compile(
     r'^(sony|nintendo|sega|atari|'
     r'psp|ps\s*vita|playstation(\s*(portable|vita))?|'
     r'game\s*boy|gameboy|gba\s*sp|gba\b|gbc\b|'
     r'3ds|2ds|dsi|ds\s*lite|'
     r'new\s*3ds|old\s*3ds)',
-    re.I
-)
-
-GAME_TITLE_WITH_PLATFORM_RE = re.compile(
-    r'^.{5,}\s+(gameboy|game\s*boy|gba|gbc|nintendo\s*ds|psp|3ds|2ds)\s*$',
     re.I
 )
 
@@ -443,33 +439,6 @@ TCG_EMPTY_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
-def classify_tcg(t_f):
-    if not any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]): return None
-    if JAPANESE_RE.search(t_f): return None
-    if TCG_EMPTY_RE.search(t_f): return None
-    if any(x in t_f for x in ["chiński", "chińskie", "chinese", "chin "]): return None
-    sealed_keywords = [
-        "etb", "elite trainer", "booster box", "display", "bundle",
-        "tin", "blister", "first partner", "collection box",
-        "premium collection", "booster pack", "booster",
-    ]
-    if not any(k in t_f for k in sealed_keywords): return None
-    if "etb" in t_f or "elite trainer" in t_f: return ("TCG_ETB", 280)
-    if "booster box" in t_f or ("display" in t_f and ("pokemon" in t_f or "pokémon" in t_f or "ポケモン" in t_f)): return ("TCG_BOX", 600)
-    if "first partner" in t_f: return ("TCG_FIRST_PARTNER", 150)
-    if "bundle" in t_f: return ("TCG_BUNDLE", 150)
-    if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]): return ("TCG_MINI_TIN", 50)
-    if "tin" in t_f: return ("TCG_TIN", 100)
-    if "blister" in t_f: return ("TCG_BLISTER", 70)
-    if "booster pack" in t_f or (
-        "booster" in t_f and not any(x in t_f for x in ["box", "bundle", "display"])
-    ): return ("TCG_BOOSTER", 25)
-    return None
-
-# ---------------------------------------------------------------------------
-# GRADED POKEMON CARDS — PSA / BGS / CGC / ACE / SGC
-# ---------------------------------------------------------------------------
-
 GRADER_RE = re.compile(
     r'\b(psa|bgs|bgs\s*subgrades?|cgc|ace\s*grading|ace|sgc|pgx)\b',
     re.I
@@ -492,10 +461,34 @@ GRADED_FAKE_RE = re.compile(
     re.I
 )
 
-def classify_graded_card(t_f):
-    if not any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]):
-        return None
+# ---------------------------------------------------------------------------
+# KLASYFIKACJE TCG I GRADED
+# ---------------------------------------------------------------------------
 
+def classify_tcg(t_f):
+    if JAPANESE_RE.search(t_f): return None
+    if TCG_EMPTY_RE.search(t_f): return None
+    if any(x in t_f for x in ["chiński", "chińskie", "chinese", "chin "]): return None
+    
+    sealed_keywords = [
+        "etb", "elite trainer", "booster box", "display", "bundle",
+        "tin", "blister", "first partner", "collection box",
+        "premium collection", "booster pack", "booster",
+    ]
+    if not any(k in t_f for k in sealed_keywords): return None
+
+    if "etb" in t_f or "elite trainer" in t_f: return ("TCG_ETB", 280)
+    if "booster box" in t_f or "display" in t_f: return ("TCG_BOX", 600)
+    if "first partner" in t_f: return ("TCG_FIRST_PARTNER", 150)
+    if "bundle" in t_f: return ("TCG_BUNDLE", 150)
+    if any(x in t_f for x in ["mini tin", "mini-tin", "small tin"]): return ("TCG_MINI_TIN", 50)
+    if "tin" in t_f: return ("TCG_TIN", 100)
+    if "blister" in t_f: return ("TCG_BLISTER", 70)
+    if "booster pack" in t_f or "booster" in t_f: return ("TCG_BOOSTER", 25)
+    return None
+
+
+def classify_graded_card(t_f):
     if not GRADER_RE.search(t_f):
         return None
 
@@ -519,20 +512,11 @@ def classify_graded_card(t_f):
     is_9_5  = bool(re.search(r'\b9\.5\b', t_f, re.I))
 
     if is_psa:
-        if is_10:
-            return ("GRADED_PSA10", 100)
-        else:
-            return ("GRADED_PSA9", 100)
+        return ("GRADED_PSA10", 100) if is_10 else ("GRADED_PSA9", 100)
     elif is_bgs:
-        if is_10 or is_9_5:
-            return ("GRADED_BGS10", 100)
-        else:
-            return ("GRADED_BGS9", 100)
+        return ("GRADED_BGS10", 100) if (is_10 or is_9_5) else ("GRADED_BGS9", 100)
     elif is_cgc:
-        if is_10:
-            return ("GRADED_CGC10", 100)
-        else:
-            return ("GRADED_CGC9", 100)
+        return ("GRADED_CGC10", 100) if is_10 else ("GRADED_CGC9", 100)
     elif is_sgc:
         return ("GRADED_SGC", 100)
     elif is_ace:
@@ -542,7 +526,6 @@ def classify_graded_card(t_f):
     else:
         return ("GRADED_OTHER", 100)
 
-# ---------------------------------------------------------------------------
 
 def is_interesting_item(title, price):
     t_f = title.lower().strip()
@@ -552,28 +535,34 @@ def is_interesting_item(title, price):
     if MERCH_RE.search(t_f): return False, "MERCH"
     if SONY_CAMERA_RE.search(t_f): return False, "JUNK_EXCLUDE"
 
+    # 1. Graded Cards
+    graded = classify_graded_card(t_f)
+    if graded:
+        subcat, max_price = graded
+        if price <= max_price:
+            return True, subcat
+        return False, "PRICE"
+
+    # 2. TCG Sealed
+    tcg = classify_tcg(t_f)
+    if tcg:
+        subcat, max_price = tcg
+        if 10 <= price <= max_price:
+            return True, subcat
+        return False, "PRICE"
+
+    # 3. Dodatkowa ochrona dla śmieci Pokemon bez konsoli
     if any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]):
         if PARTS_RE.search(t_f) and not any(x in t_f for x in ["konsola", "console"]):
             return False, "PART"
 
-        graded = classify_graded_card(t_f)
-        if graded:
-            subcat, max_price = graded
-            if price <= max_price:
-                return True, subcat
-            return False, "PRICE"
-
-        tcg = classify_tcg(t_f)
-        if tcg:
-            subcat, max_price = tcg
-            if 10 <= price <= max_price: return True, subcat
-            return False, "PRICE"
         has_console = any(c in t_f for c in [
             "vita", "psp", "3ds", "2ds", "ds lite", "dsi", "nintendo ds",
-            "gameboy", "gba", "gbc", "game boy"
+            "gameboy", "gba", "gbc", "game boy", "pch-"
         ])
         if not has_console: return False, "PKMN_JUNK"
 
+    # 4. Detekcja sygnałów gier i akcesoriów
     GAME_SIGNAL_RE = re.compile(r"""
         \b(
             ^gra\s+|\bgra\s+na\s+|
@@ -617,13 +606,20 @@ def is_interesting_item(title, price):
     else:
         if ADAPTER_MAIN_RE.search(t_f): return False, "PART"
 
+    # 5. Przypisanie do hw_cat
     hw_cat = None
-    if "vita" in t_f: hw_cat = "VITA"
-    elif any(x in t_f for x in ["psp", "playstation portable"]): hw_cat = "PSP"
-    elif any(x in t_f for x in ["3ds", "2ds"]): hw_cat = "3DS"
-    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds"]): hw_cat = "DS"
-    elif any(x in t_f for x in ["apple pencil"]): hw_cat = "PEN"
-    elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]): hw_cat = "RETRO"
+    if any(x in t_f for x in ["vita", "pch-", "pch1", "pch2", "pch 1", "pch 2", "playstation vita", "psvita"]):
+        hw_cat = "VITA"
+    elif any(x in t_f for x in ["psp", "playstation portable", "1004", "2004", "3004", "e1004", "1000", "2000", "3000", "e1000"]):
+        hw_cat = "PSP"
+    elif any(x in t_f for x in ["3ds", "2ds", "3 ds", "2 ds"]):
+        hw_cat = "3DS"
+    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds", "ds xl"]):
+        hw_cat = "DS"
+    elif any(x in t_f for x in ["apple pencil"]):
+        hw_cat = "PEN"
+    elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]):
+        hw_cat = "RETRO"
 
     if hw_cat:
         if is_game_signal:
@@ -631,7 +627,8 @@ def is_interesting_item(title, price):
         elif not has_konsola_in_title:
             if not has_bundle_signal: return False, "SINGLE_GAME"
 
-    if not hw_cat: return False, "NO_CAT"
+    if not hw_cat:
+        return False, "NO_CAT"
 
     limits = {
         "PSP":     (50, 200),
@@ -648,6 +645,7 @@ def is_interesting_item(title, price):
 # ---------------------------------------------------------------------------
 # PROCESS ITEM
 # ---------------------------------------------------------------------------
+
 def process_item(title, url, price, src, item_id=None, suppress=False):
     if item_id and item_id in SENT_IDS:
         return False
@@ -687,6 +685,7 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
 # ---------------------------------------------------------------------------
 # PĘTLA GŁÓWNA
 # ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     log_debug("🚀 SNIPER v75.0 | graded cards max 100zł, bez min, + japońskie słaby")
     vinted_init()
@@ -803,4 +802,3 @@ if __name__ == "__main__":
 
         log_debug("💤 Przerwa 5 min.")
         time.sleep(300)
-a
