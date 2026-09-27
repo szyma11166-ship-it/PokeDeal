@@ -218,7 +218,7 @@ def scrape_vinted(query, first_run=False):
                     title_el = card.find(["p", "h2", "span"], class_=re.compile(r"title|name|description", re.I))
                     title = title_el.get_text(strip=True) if title_el else a_tag.get("title", "")
 
-                    price_el = card.find(text=re.compile(r"\d+[\s,.]*\d*\s*zł", re.I))
+                    price_el = card.find(string=re.compile(r"\d+[\s,.]*\d*\s*zł", re.I))
                     if price_el:
                         p_match = re.search(r"(\d+(?:[\s,.]\d+)?)\s*zł", price_el)
                         if p_match:
