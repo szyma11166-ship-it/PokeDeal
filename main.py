@@ -723,7 +723,6 @@ if __name__ == "__main__":
         "ポケモン cgc 10", "ポケモン cgc 9",
         "ポケモン psa graded", "pokemon japanese psa",
         "pokemon japanese graded", "pokemon jp psa",
-        "ipod nano",
     ]
     Q_PL = [
         "psp fat", "psp slim", "psp go", "psp street",
