@@ -114,7 +114,7 @@ def save_to_memory(clean_url, content_hash):
     SENT_CACHE.add(f"{clean_url}_{content_hash}")
     if r_db:
         try:
-            r_db.setex(f"sent:{content_hash}", 172800, clean_url)
+            r_db.set(f"sent:{content_hash}", clean_url, ex=172800)
         except: pass
     else:
         try:
