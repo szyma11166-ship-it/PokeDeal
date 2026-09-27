@@ -82,10 +82,6 @@ ALLEGRO_SESSION.headers.update({
 def log_debug(msg):
     print(f"{time.strftime('%H:%M:%S')} | {msg}", flush=True)
 
-def extract_olx_id(url):
-    match = re.search(r'-ID([a-zA-Z0-9]+)\.html', url)
-    return match.group(1) if match else None
-
 def escape_md(text):
     return re.sub(r'([_*\[\]`])', r'\\\1', text)
 
@@ -194,7 +190,6 @@ def scrape_vinted(query, first_run=False):
             soup = BeautifulSoup(r.text, "html.parser")
             items = []
 
-            # Metoda 1: Wyciągnięcie struktury JSON z tagu Next.js
             script_tag = soup.find("script", id="__NEXT_DATA__")
             if script_tag and script_tag.string:
                 try:
@@ -205,7 +200,6 @@ def scrape_vinted(query, first_run=False):
                 except Exception as e:
                     log_debug(f"⚠️ Błąd parsowania __NEXT_DATA__ [{query}]: {e}")
 
-            # Metoda 2: Fallback na parsowanie HTML, jeśli brak JSON w tagu
             if not items:
                 item_cards = soup.select("div[data-testid='grid-item'], div.feed-grid__item")
                 for card in item_cards:
@@ -357,15 +351,13 @@ MERCH_RE = re.compile(r"""
 ADAPTER_MAIN_RE = re.compile(r"^(adapter|zasilacz|ac\s*adapter|power\s*adapter|przejściówka)\b", re.I)
 PHONE_WALKMAN_RE = re.compile(r"\b(ericsson|xperia|nokia|samsung|iphone|motorola|htc|huawei|xiaomi)\b", re.I)
 CLONE_RE = re.compile(r"\b(r36s?|miyoo|anbernic|retroid|trimui|powkiddy|rg\d+|rk\d+|rgb\d+|rgxx|rg cube|gameforce|pxp|sup\s*game|retromini|bittboy|pocketgo|r36h)\b", re.I)
-DICTAPHONE_RE = re.compile(r"\b(dyktafon|voice\s*recorder|tcm[-\s]\d|icd[-\s]|nagrywarka|voice\s*memo|dictaphone|diktafon)\b", re.I)
 JAPANESE_RE = re.compile(r"\b(japanese|japan|japoński|japońskie|jp\s*version|jp\s*ed|japanese\s*ed|nihon|nippon|\bjp\b(?=\s*(ver|ed|version|edition)))\b", re.I)
-
 SONY_CAMERA_RE = re.compile(r"\bsony\s+dsc[-\s]", re.I)
 
 JUNK_RE = re.compile(r"""
     \b(
         ps[1-5]|playstation\s*[1-5]|xbox|xbox\s*360|xbox\s*one|xbox\s*series|
-        wii|wii\s*u|switch|nintendo\s*switch|
+        wii|wii\s*u|
         tur|ładowacz|ciągnik|koparka|silnik|maszyny\s*rolnicze|skrzynia\s*biegów|
         klacz|koń|pks|pck|pkp|bilet|bilety|kalendarz|
         iveco|mercedes|audi|bmw|land\s*rover|
@@ -391,32 +383,35 @@ BUNDLE_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
+# DZIEDZICZENIE PATERNÓW DLA SPRZĘTU (HW)
+HW_PATTERNS = {
+    "VITA": re.compile(r"\b(ps\s*vita|psvita|playstation\s*vita|vita|pch[-\s]?\d{4}|pch\d{4})\b", re.I),
+    "PSP": re.compile(r"\b(psp|playstation\s*portable|psp[-\s]?\d{4}|psp[-\s]?e\d{4})\b", re.I),
+    "3DS": re.compile(r"\b(3ds|2ds|nintendo\s*3ds|nintendo\s*2ds|new\s*3ds|old\s*3ds|3ds\s*xl|2ds\s*xl|3ds\s*ll)\b", re.I),
+    "DS": re.compile(r"\b(nintendo\s*ds|ds\s*lite|dsi|ds\s*xl|dsi\s*xl|ds\s*fat|ds\s*phat|ds\s*tank|\bds\b)\b", re.I),
+    "RETRO": re.compile(r"\b(game\s*boy|gameboy|gba|gbc|gb\s*advance|gb\s*micro|game\s*boy\s*micro|gba\s*sp)\b", re.I),
+    "SWITCH": re.compile(r"\b(nintendo\s*switch|switch\s*lite|switch\s*oled)\b", re.I),
+    "PEN": re.compile(r"\b(apple\s*pencil)\b", re.I),
+}
+
 CONSOLE_MAIN_RE = re.compile(r"""
     \b(
         konsola|console|handheld|playstation\s*portable|portabil\b|
         konsol\b|konsolę|konsoli|konzol\b|konzole\b|
         consolă\b|consola\b|spielkonsole\b|pelikonsoli\b|spelkonsol\b|
         psp\s*(fat|slim|go|street|1000|2000|3000|value\s*pack)|
-        psp[-\s]?\d{4}|psp[-\s]?e\d{4}|psp[-\s]?\d{4}[a-z]|sony\s*e\d{4}|
+        psp[-\s]?\d{4}|psp[-\s]?e\d{4}|
         ps\s*vita\b|psvita\b|playstation\s*vita\b|pch-?\d{4}|
         vita\s*(slim|fat|1000|2000|pch|oled|tv)|
         new\s*3ds|old\s*3ds|3ds\s*xl|3ds\s*ll|2ds\s*xl|
         nintendo\s*3ds|nintendo\s*2ds|
         nintendo\s*ds\b|ds\s*lite|dsi\s*xl|\bdsi\b|
+        nintendo\s*switch|switch\s*lite|
         game\s*boy\s*(advance\s*sp|color|pocket|light|original|classic)|
         gameboy\s*(color|advance|sp|pocket|light|classic)|
         gba\s*sp|\bgbc\b|\bgba\b
     )\b
 """, re.I | re.VERBOSE)
-
-STARTS_WITH_PLATFORM_RE = re.compile(
-    r'^(sony|nintendo|sega|atari|'
-    r'psp|ps\s*vita|playstation(\s*(portable|vita))?|'
-    r'game\s*boy|gameboy|gba\s*sp|gba\b|gbc\b|'
-    r'3ds|2ds|dsi|ds\s*lite|'
-    r'new\s*3ds|old\s*3ds)',
-    re.I
-)
 
 TCG_EMPTY_RE = re.compile(r"""
     \b(
@@ -439,20 +434,22 @@ TCG_EMPTY_RE = re.compile(r"""
     )\b
 """, re.I | re.VERBOSE)
 
+# REGEXY GRADED
 GRADER_RE = re.compile(
-    r'\b(psa|bgs|bgs\s*subgrades?|cgc|ace\s*grading|ace|sgc|pgx)\b',
+    r'\b(psa|bgs|cgc|sgc|ace|pgx|pca|graad|ap)\b|\b(psa|bgs|cgc|sgc|ace|pgx|pca|graad|ap)\d',
     re.I
 )
 
 GRADE_VALUE_RE = re.compile(
-    r'\b(10|gem\s*mint|pristine|psa\s*10|psa\s*9|bgs\s*10|bgs\s*9|cgc\s*10|cgc\s*9'
-    r'|grade[d]?\s*(10|9\.5|9)|9\.5|(?<!\d)9(?!\d)|graded\s*10|graded\s*9)\b',
+    r'\b(10|gem\s*mint|pristine|9\.5)\b'
+    r'|\b(psa|bgs|cgc|sgc|ace|pgx|pca|graad|ap)[\s\-_]*(10|9\.5|9)\b'
+    r'|\bgrade[d]?[\s\-_]*(10|9\.5|9)\b',
     re.I
 )
 
 GRADE_LOW_RE = re.compile(
-    r'\b(psa|bgs|cgc|sgc|ace|pgx)\s*[1-8](?!\d)\b'
-    r'|grade[d]?\s*[1-8](?!\d)\b',
+    r'\b(psa|bgs|cgc|sgc|ace|pgx|pca|graad|ap)[\s\-_]*[1-8](?!\d|\.)\b'
+    r'|\bgrade[d]?[\s\-_]*[1-8](?!\d|\.)\b',
     re.I
 )
 
@@ -489,27 +486,20 @@ def classify_tcg(t_f):
 
 
 def classify_graded_card(t_f):
-    if not GRADER_RE.search(t_f):
-        return None
+    if not GRADER_RE.search(t_f): return None
+    if GRADE_LOW_RE.search(t_f): return None
+    if GRADED_FAKE_RE.search(t_f): return None
+    if not GRADE_VALUE_RE.search(t_f): return None
 
-    if GRADE_LOW_RE.search(t_f):
-        return None
+    is_psa  = bool(re.search(r'\bpsa\b|\bpsa\d', t_f, re.I))
+    is_bgs  = bool(re.search(r'\bbgs\b|\bbgs\d', t_f, re.I))
+    is_cgc  = bool(re.search(r'\bcgc\b|\bcgc\d', t_f, re.I))
+    is_sgc  = bool(re.search(r'\bsgc\b|\bsgc\d', t_f, re.I))
+    is_ace  = bool(re.search(r'\b(ace\s*grading|ace)\b|\bace\d', t_f, re.I))
+    is_pgx  = bool(re.search(r'\bpgx\b|\bpgx\d', t_f, re.I))
 
-    if GRADED_FAKE_RE.search(t_f):
-        return None
-
-    if not GRADE_VALUE_RE.search(t_f):
-        return None
-
-    is_psa  = bool(re.search(r'\bpsa\b', t_f, re.I))
-    is_bgs  = bool(re.search(r'\bbgs\b', t_f, re.I))
-    is_cgc  = bool(re.search(r'\bcgc\b', t_f, re.I))
-    is_sgc  = bool(re.search(r'\bsgc\b', t_f, re.I))
-    is_ace  = bool(re.search(r'\b(ace\s*grading|ace)\b', t_f, re.I))
-    is_pgx  = bool(re.search(r'\bpgx\b', t_f, re.I))
-
-    is_10   = bool(re.search(r'\b(10|gem\s*mint|pristine)\b', t_f, re.I))
-    is_9_5  = bool(re.search(r'\b9\.5\b', t_f, re.I))
+    is_10   = bool(re.search(r'\b10\b|gem\s*mint|pristine', t_f, re.I)) or bool(re.search(r'(psa|cgc|bgs|sgc|ace|pgx)[\s\-_]*10', t_f, re.I))
+    is_9_5  = bool(re.search(r'9\.5', t_f, re.I))
 
     if is_psa:
         return ("GRADED_PSA10", 100) if is_10 else ("GRADED_PSA9", 100)
@@ -535,7 +525,7 @@ def is_interesting_item(title, price):
     if MERCH_RE.search(t_f): return False, "MERCH"
     if SONY_CAMERA_RE.search(t_f): return False, "JUNK_EXCLUDE"
 
-    # 1. Graded Cards
+    # 1. Graded Cards (PSA 10, CGC10, BGS 9.5 itp.)
     graded = classify_graded_card(t_f)
     if graded:
         subcat, max_price = graded
@@ -543,7 +533,7 @@ def is_interesting_item(title, price):
             return True, subcat
         return False, "PRICE"
 
-    # 2. TCG Sealed
+    # 2. TCG Sealed (ETB, Blister, Box)
     tcg = classify_tcg(t_f)
     if tcg:
         subcat, max_price = tcg
@@ -551,22 +541,19 @@ def is_interesting_item(title, price):
             return True, subcat
         return False, "PRICE"
 
-    # 3. Dodatkowa ochrona dla śmieci Pokemon bez konsoli
+    # 3. Ochrona dla śmieci Pokemon bez konsoli
     if any(p in t_f for p in ["pokemon", "pokémon", "ポケモン"]):
         if PARTS_RE.search(t_f) and not any(x in t_f for x in ["konsola", "console"]):
             return False, "PART"
 
-        has_console = any(c in t_f for c in [
-            "vita", "psp", "3ds", "2ds", "ds lite", "dsi", "nintendo ds",
-            "gameboy", "gba", "gbc", "game boy", "pch-"
-        ])
+        has_console = any(HW_PATTERNS[cat].search(t_f) for cat in ["VITA", "PSP", "3DS", "DS", "RETRO", "SWITCH"])
         if not has_console: return False, "PKMN_JUNK"
 
-    # 4. Detekcja sygnałów gier i akcesoriów
+    # 4. Detekcja gier i akcesoriów
     GAME_SIGNAL_RE = re.compile(r"""
         \b(
             ^gra\s+|\bgra\s+na\s+|
-            \bna\s+(nintendo|psp|ds|gba|gbc|vita)\b|
+            \bna\s+(nintendo|psp|ds|gba|gbc|vita|switch)\b|
             \bgame\s+for\s+|
             \bjoc\s+|jogo\s+|juego\s+|jeu\s+|
             \bspel\s+till\s+|spil\s+til\s+
@@ -578,67 +565,38 @@ def is_interesting_item(title, price):
     if SCREEN_RE.search(t_f): return False, "PART"
 
     has_konsola_in_title = bool(CONSOLE_MAIN_RE.search(t_f)) or "konsola" in t_f or "console" in t_f
-
-    if STARTS_WITH_PLATFORM_RE.match(t_f):
-        if not CONSOLE_MAIN_RE.search(t_f):
-            after_platform = STARTS_WITH_PLATFORM_RE.sub('', t_f).strip()
-            if len(after_platform) > 3 and not re.match(
-                r'^(xl|ll|lite|sp|fat|slim|go|street|color|colour|pocket|light|classic|'
-                r'advance|advance\s*sp|original|\d{4}|black|white|red|blue|pink|'
-                r'purple|yellow|green|silver|gold|coral|turquoise|'
-                r'cfw|ips|oled|komplet|stan|bdb|idealn|sprawna|z\s*grami|'
-                r'przenośna|przenośn|gaming|konsola|console)',
-                after_platform, re.I
-            ):
-                has_konsola_in_title = False
-            else:
-                has_konsola_in_title = True
-        else:
-            has_konsola_in_title = True
-
     has_bundle_signal = bool(BUNDLE_RE.search(t_f))
 
-    if not has_konsola_in_title and not has_bundle_signal:
-        if PARTS_RE.search(t_f): return False, "PART"
-        if ADAPTER_MAIN_RE.search(t_f): return False, "PART"
-    elif not has_konsola_in_title and has_bundle_signal:
-        if ADAPTER_MAIN_RE.search(t_f): return False, "PART"
-    else:
-        if ADAPTER_MAIN_RE.search(t_f): return False, "PART"
+    if PARTS_RE.search(t_f) or ADAPTER_MAIN_RE.search(t_f):
+        return False, "PART"
 
-    # 5. Przypisanie do hw_cat
+    # 5. Dopasowanie kategorii HW (sprzętu)
     hw_cat = None
-    if any(x in t_f for x in ["vita", "pch-", "pch1", "pch2", "pch 1", "pch 2", "playstation vita", "psvita"]):
-        hw_cat = "VITA"
-    elif any(x in t_f for x in ["psp", "playstation portable", "1004", "2004", "3004", "e1004", "1000", "2000", "3000", "e1000"]):
-        hw_cat = "PSP"
-    elif any(x in t_f for x in ["3ds", "2ds", "3 ds", "2 ds"]):
-        hw_cat = "3DS"
-    elif any(x in t_f for x in ["ds lite", "dsi", "nintendo ds", "ds xl"]):
-        hw_cat = "DS"
-    elif any(x in t_f for x in ["apple pencil"]):
-        hw_cat = "PEN"
-    elif any(x in t_f for x in ["gameboy", "gba", "gbc", "game boy"]):
-        hw_cat = "RETRO"
+    for cat_name, pattern in HW_PATTERNS.items():
+        if pattern.search(t_f):
+            hw_cat = cat_name
+            break
 
     if hw_cat:
-        if is_game_signal:
-            if not has_bundle_signal: return False, "SINGLE_GAME"
-        elif not has_konsola_in_title:
-            if not has_bundle_signal: return False, "SINGLE_GAME"
+        if is_game_signal and not has_bundle_signal:
+            return False, "SINGLE_GAME"
+        if not has_konsola_in_title and not has_bundle_signal:
+            return False, "SINGLE_GAME"
 
     if not hw_cat:
         return False, "NO_CAT"
 
+    # Granice cenowe dla poszczególnych konsol
     limits = {
-        "PSP":     (50, 200),
-        "VITA":    (150, 500),
-        "3DS":     (100, 500),
-        "DS":      (50, 170),
-        "RETRO":   (50, 250),
-        "PEN":     (50, 100),
+        "PSP":     (40, 220),
+        "VITA":    (100, 550),
+        "3DS":     (80, 550),
+        "DS":      (40, 180),
+        "RETRO":   (40, 300),
+        "SWITCH":  (250, 700),
+        "PEN":     (50, 120),
     }
-    lo, hi = limits.get(hw_cat, (50, 1000))
+    lo, hi = limits.get(hw_cat, (40, 1000))
     if lo <= price <= hi: return True, hw_cat
     return False, "PRICE"
 
@@ -678,8 +636,13 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
         return True
 
     else:
-        if res != "JUNK_EXCLUDE" and not suppress:
+        # Wyciszamy zbędne komunikaty NO_CAT dla spamu wyszukiwania, żeby nie zaśmiecać konsoli
+        if res not in ["JUNK_EXCLUDE", "PKMN_JUNK", "NO_CAT"] and not suppress:
             log_debug(f"⛔ [{res}] {title[:50]} ({price} zł)")
+        elif res == "NO_CAT" and not suppress:
+            # Wypisz powiadomienie tylko jeśli przedmiot przypomina konsolę, a została pominięta
+            if any(w in title.lower() for w in ["nintendo", "sony", "playstation", "console", "konsola", "game"]):
+                log_debug(f"❓ [NIE_ROZPOZNANO] {title[:50]} ({price} zł)")
         return False
 
 # ---------------------------------------------------------------------------
@@ -687,7 +650,7 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    log_debug("🚀 SNIPER v75.0 | graded cards max 100zł, bez min, + japońskie słaby")
+    log_debug("🚀 SNIPER v77.0 | Naprawione dopasowanie konsol i wyczyszczone logi NO_CAT")
     vinted_init()
 
     Q_V = [
