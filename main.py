@@ -622,16 +622,23 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
     valid, res = is_interesting_item(title, price)
 
     if valid:
+ 
+        if suppress:
+            save_to_memory(clean_url, content_hash)
+            return False
+ 
         save_to_memory(clean_url, content_hash)
-        if not suppress:
-            msg = (
-                f"🔥 *OKAZJA {src}* [{res}]\n"
-                f"📦 {escape_md(title[:70])}\n"
-                f"💰 `{price:.2f} zł`\n"
-                f"🔗 {clean_url}"
-            )
-            send_telegram(msg)
-            log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
+ 
+        msg = (
+        f"🔥 *OKAZJA {src}* [{res}]\n"
+        f"📦 {escape_md(title[:70])}\n"
+        f"💰 `{price:.2f} zł`\n"
+        f"🔗 {clean_url}"
+        )
+ 
+        send_telegram(msg)
+        log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
+ 
         return True
 
     else:
