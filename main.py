@@ -622,7 +622,6 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
     valid, res = is_interesting_item(title, price)
 
     if valid:
- 
         if suppress:
             save_to_memory(clean_url, content_hash)
             return False
