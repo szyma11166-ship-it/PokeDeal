@@ -613,7 +613,7 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
 
     clean_url = url.split("?")[0].rstrip("/")
     content_hash = hashlib.md5(
-        f"{title[:40].lower().strip()}_{int(price)}".encode()
+    f"{title.lower().strip()}_{price}_{clean_url}".encode()
     ).hexdigest()
 
     if is_duplicate(clean_url, content_hash):
@@ -720,14 +720,17 @@ if __name__ == "__main__":
         random.shuffle(pl_list)
 
         # =========================
-        # VINTED — CO 15 MIN
+        # VINTED — CO 15 MINa
         # =========================
         now = time.time()
         if now - LAST_VINTED_SCAN >= VINTED_SCAN_INTERVAL:
             log_debug("🔎 Start skanu Vinted (15 min interval)")
             vinted_ok = False
 
-            for q_v in v_list:
+            for q_v in random.sample
+                (v_list,
+                min(VINTED_SCAN_SIZE, len(v_list))
+            ):
                 ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
                 if ok:
                     vinted_ok = True
