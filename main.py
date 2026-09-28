@@ -625,21 +625,21 @@ def process_item(title, url, price, src, item_id=None, suppress=False):
         if suppress:
             save_to_memory(clean_url, content_hash)
             return False
- 
+            
         save_to_memory(clean_url, content_hash)
- 
+        
         msg = (
         f"🔥 *OKAZJA {src}* [{res}]\n"
         f"📦 {escape_md(title[:70])}\n"
         f"💰 `{price:.2f} zł`\n"
         f"🔗 {clean_url}"
         )
- 
+        
         send_telegram(msg)
         log_debug(f"🎯 WYSŁANO: {title[:50]} ({price} zł) [{res}]")
- 
+        
         return True
-
+        
     else:
         save_to_memory(clean_url, content_hash)
         if res not in ["JUNK_EXCLUDE", "PKMN_JUNK", "NO_CAT"] and not suppress:
