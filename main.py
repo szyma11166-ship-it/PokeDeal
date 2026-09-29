@@ -227,6 +227,10 @@ def scrape_vinted(query, first_run=False):
                                 "url": item_url
                             })
 
+            if items:
+                first_title = items[0].get("title", "BRAK")
+                log_debug(f"DEBUG [{query}] -> {first_title}")
+                
             new_count = 0
             for item in items:
                 if isinstance(item, dict):
