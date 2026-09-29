@@ -212,7 +212,11 @@ def scrape_vinted(query, first_run=False):
                     item_id_match = re.search(r'/items/(\d+)', item_url)
                     item_id = item_id_match.group(1) if item_id_match else ""
 
-                    title_el = card.find(["p", "h2", "span"], class_=re.compile(r"title|name|description", re.I))
+                    log_debug(card.get_text(" ", strip=True)[:500])
+                    title_el = card.find(
+                        ["p", "h2", "h3", "span"],
+                        class_=re.compile(r".*", re.I)
+                    )
                     title = title_el.get_text(strip=True) if title_el else a_tag.get("title", "")
 
                     price_el = card.find(string=re.compile(r"\d+[\s,.]*\d*\s*zł", re.I))
@@ -226,10 +230,6 @@ def scrape_vinted(query, first_run=False):
                                 "price": float(clean_p),
                                 "url": item_url
                             })
-
-            if items:
-                log_debug(json.dumps(items[0], ensure_ascii=False, indent=2))
-                return False
                 
             new_count = 0
             for item in items:
