@@ -730,7 +730,7 @@ if __name__ == "__main__":
             for q_v in random.sample:
                 (v_list,
                 min(VINTED_SCAN_SIZE, len(v_list))
-            ):
+            )
                 ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
                 if ok:
                     vinted_ok = True
