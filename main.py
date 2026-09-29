@@ -246,10 +246,17 @@ def scrape_vinted(query, first_run=False):
             if not first_run:
                 log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
             return True
-        else:
-            log_debug(f"⚠️ Vinted [{query}]: {r.status_code}")
-            return False
+        elif r.status_code == 429:
+            log_debug(f"⚠️ Vinted [{query}]: 429 - ratee limit")
             
+            time.sleep(random.uniform(60, 120))
+            
+            return False
+
+        else:
+            log_debug(f"⚠️ Vinted [{query}]: {{r.status_code}")      
+            return False
+
     except Exception as e:
         log_debug(f"💥 Błąd Vinted [{query}]: {e}")
         return False
@@ -732,6 +739,8 @@ if __name__ == "__main__":
                 
                 if ok:
                     vinted_ok = True
+
+                time.sleep(random.uniform(5, 8))
 
             time.sleep(random.uniform(8, 14))
 
