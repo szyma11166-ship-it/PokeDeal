@@ -727,14 +727,13 @@ if __name__ == "__main__":
             log_debug("🔎 Start skanu Vinted (15 min interval)")
             vinted_ok = False
 
-            for q_v in random.sample(
-                v_list,
-                min(VINTED_SCAN_SIZE, len(v_list))
-            ):
+            for q_v in v_list:
                 ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
+                
                 if ok:
                     vinted_ok = True
-                time.sleep(random.uniform(8, 14))
+
+            time.sleep(random.uniform(8, 14))
 
             LAST_VINTED_SCAN = now
 
