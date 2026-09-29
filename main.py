@@ -212,12 +212,17 @@ def scrape_vinted(query, first_run=False):
                     item_id_match = re.search(r'/items/(\d+)', item_url)
                     item_id = item_id_match.group(1) if item_id_match else ""
 
-                    log_debug(card.get_text(" ", strip=True)[:500])
-                    title_el = card.find(
-                        ["p", "h2", "h3", "span"],
-                        class_=re.compile(r".*", re.I)
-                    )
-                    title = title_el.get_text(strip=True) if title_el else a_tag.get("title", "")
+                    title = ""
+                    
+                    href = a_tag.get("href", "")
+                    m = re.search(r"/items/\d+-([^?]+)", href)
+                    
+                    if m:
+                        title = m.group(1)
+                        title = title.replace("-", " ").strip()
+                        
+                    if not title:
+                        title = card.get_text(" ", strip=True)[:200]
 
                     price_el = card.find(string=re.compile(r"\d+[\s,.]*\d*\s*zł", re.I))
                     if price_el:
@@ -618,7 +623,6 @@ def is_interesting_item(title, price):
 
 def process_item(title, url, price, src, item_id=None, suppress=False):
     if src == "VINTED":
-        log_debug(f"TEST VINTED TITLE: {title}")
     if item_id:
         if item_id in SENT_IDS:
             return False
