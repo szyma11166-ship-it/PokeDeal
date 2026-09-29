@@ -248,7 +248,7 @@ def scrape_vinted(query, first_run=False):
                         new_count += 1
 
             if not first_run:
-                log_debug(f"✅ Vinted [{query}]: {len(items)} ofert, {new_count} nowych")
+                log_debug(f"✅ Vinted [{query}]: przeanalizowano {len(items)} ofert, nowych {new_count}")
             return True
         elif r.status_code == 429:
             log_debug(f"⚠️ Vinted [{query}]: 429 - ratee limit")
