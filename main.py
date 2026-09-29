@@ -242,7 +242,14 @@ def scrape_vinted(query, first_run=False):
                     item_id = str(item.get("id", ""))
                     if item_id and item_id in SENT_IDS: continue
                     
-                    title = item.get("title", "")
+                    href = item.get("url", "")
+                    
+                    m = re.search(r"/items/\d+-([^?]+)", href)
+                    
+                    if m:
+                        title = m.group(1).replace("-", " ")
+                    else:
+                        title = item.get("title", "")
                     p_raw = item.get("price", 0)
                     price = float(p_raw.get("amount", 0)) if isinstance(p_raw, dict) else float(p_raw or 0)
                     
