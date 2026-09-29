@@ -617,6 +617,8 @@ def is_interesting_item(title, price):
 # ---------------------------------------------------------------------------
 
 def process_item(title, url, price, src, item_id=None, suppress=False):
+    if src == "VINTED":
+        log_debug(f"TEST VINTED TITLE: {title}"
     if item_id:
         if item_id in SENT_IDS:
             return False
