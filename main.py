@@ -727,7 +727,7 @@ if __name__ == "__main__":
             log_debug("🔎 Start skanu Vinted (15 min interval)")
             vinted_ok = False
 
-            for q_v in random.sample
+            for q_v in random.sample:
                 (v_list,
                 min(VINTED_SCAN_SIZE, len(v_list))
             ):
