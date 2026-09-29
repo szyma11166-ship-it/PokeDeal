@@ -228,7 +228,8 @@ def scrape_vinted(query, first_run=False):
                             })
 
             if items:
-                log_debug(json.dumps(items[0], ensure_ascii=False)[:2000])
+                log_debug(json.dumps(items[0], ensure_ascii=False, indent=2))
+                return False
                 
             new_count = 0
             for item in items:
