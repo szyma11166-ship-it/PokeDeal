@@ -228,8 +228,7 @@ def scrape_vinted(query, first_run=False):
                             })
 
             if items:
-                first_title = items[0].get("title", "BRAK")
-                log_debug(f"DEBUG [{query}] -> {first_title}")
+                log_debug(json.dumps(items[0], ensure_ascii=False)[:2000])
                 
             new_count = 0
             for item in items:
