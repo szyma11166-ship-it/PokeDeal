@@ -254,7 +254,7 @@ def scrape_vinted(query, first_run=False):
             return False
 
         else:
-            log_debug(f"⚠️ Vinted [{query}]: {{r.status_code}")      
+            log_debug(f"⚠️ Vinted [{query}]: {{r.status_code}")
             return False
 
     except Exception as e:
