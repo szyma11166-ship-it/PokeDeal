@@ -185,12 +185,7 @@ def scrape_vinted(query, first_run=False):
             time.sleep(random.uniform(5, 10))
             if vinted_init():
                 r = VINTED_SESSION.get(url, timeout=20)
-                log_debug(f"🔍 VINTED INIT STATUS: {r.status_code}")
-                try:
-                    preview = r.text[:500].replace("\n", " ")
-                    log_debug(f"🔍 VINTED INIT BODY: {preview}")
-                except:
-                    pass
+
             else:
                 return False
 
