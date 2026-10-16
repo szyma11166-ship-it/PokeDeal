@@ -130,8 +130,10 @@ def vinted_init():
     try:
         log_debug("🔄 Inicjalizuję sesję Vinted (HTML mode)...")
         chosen = random.choice(["chrome120", "chrome116", "safari15_5", "edge101"])
-        VINTED_SESSION.impersonate = chosen
-        VINTED_SESSION.cookies.clear()
+        global VINTED_SESSION
+        VINTED_SESSION = curl_requests.Session(
+            impersonate=chosen
+        )
         
         VINTED_SESSION.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -183,6 +185,12 @@ def scrape_vinted(query, first_run=False):
             time.sleep(random.uniform(5, 10))
             if vinted_init():
                 r = VINTED_SESSION.get(url, timeout=20)
+                log_debug(f"🔍 VINTED INIT STATUS: {r.status_code}")
+                try:
+                    preview = r.text[:500].replace("\n", " ")
+                    log_debug(f"🔍 VINTED INIT BODY: {preview}")
+                except:
+                    pass
             else:
                 return False
 
@@ -265,7 +273,8 @@ def scrape_vinted(query, first_run=False):
         elif r.status_code == 429:
             log_debug(f"⚠️ Vinted [{query}]: 429 - rate limit")
             
-            time.sleep(random.uniform(60, 120))
+            global VINTED_BLOCKED_UNTIL
+            VINTED_BLOCKED_UNTIL = time.time() + 1800
             
             return False
 
@@ -750,7 +759,7 @@ if __name__ == "__main__":
             log_debug("🔎 Start skanu Vinted (15 min interval)")
             vinted_ok = False
 
-            for q_v in v_list:
+            for q_v in v_list[:15\]:
                 ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
                 
                 if ok:
