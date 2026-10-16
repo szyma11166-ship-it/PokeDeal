@@ -754,7 +754,7 @@ if __name__ == "__main__":
             log_debug("🔎 Start skanu Vinted (15 min interval)")
             vinted_ok = False
 
-            for q_v in v_list[:15\]:
+            for q_v in v_list[:15]:
                 ok = scrape_vinted(q_v, first_run=FIRST_RUN_VINTED)
                 
                 if ok:
